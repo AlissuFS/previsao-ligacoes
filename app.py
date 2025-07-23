@@ -102,11 +102,15 @@ if uploaded_file:
         df['ds'] = pd.to_datetime(df['Data'])
         df['y'] = df['Quantidade de Ligações'].clip(lower=0)
         df['ano_mes'] = df['ds'].dt.to_period('M')
-        df['dia_semana'] = df['ds'].dt.day_name()
-        df['dia_semana_pt'] = df['dia_semana'].map({
+
+        map_dias = {
             'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
-            'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-        })
+            'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira',
+            'Saturday': 'Sábado', 'Sunday': 'Domingo'
+        }
+        df['dia_semana'] = df['ds'].dt.day_name()
+        df['dia_semana_pt'] = df['dia_semana'].map(map_dias)
+        df['dia_semana_pt'] = df['dia_semana_pt'].fillna(df['dia_semana'])
 
         # Seleção de meses
         meses_disponiveis = sorted(df['ano_mes'].unique(), reverse=True)
@@ -155,10 +159,8 @@ if uploaded_file:
             df_prev = previsao[['ds', 'yhat']].rename(columns={'yhat': 'y'})
             df_prev['y'] = df_prev['y'].clip(lower=0)
             df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
-            df_prev['dia_semana_pt'] = df_prev['dia_semana'].map({
-                'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
-                'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-            })
+            df_prev['dia_semana_pt'] = df_prev['dia_semana'].map(map_dias)
+            df_prev['dia_semana_pt'] = df_prev['dia_semana_pt'].fillna(df_prev['dia_semana'])
             curva_proj = calcular_curva(df_prev, dias_selecionados, sufixo=" (Projetado)")
         else:
             curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetado)")
