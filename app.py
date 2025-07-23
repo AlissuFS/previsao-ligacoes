@@ -103,6 +103,8 @@ if uploaded_file:
         df['y'] = df['Quantidade de Ligações'].clip(lower=0)
         df['ano_mes'] = df['ds'].dt.to_period('M')
         df['dia_semana'] = df['ds'].dt.day_name()
+        
+        # Garantindo que a coluna 'dia_semana_pt' seja criada após 'dia_semana'
         df['dia_semana_pt'] = df['dia_semana'].map({
             'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
             'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
@@ -166,21 +168,72 @@ if uploaded_file:
             previsao = modelo.predict(df_futuro)
             df_prev = previsao[['ds', 'yhat']].rename(columns={'yhat': 'y'})
             df_prev['y'] = df_prev['y'].clip(lower=0)
-            df_proj = df_prev.copy()
+            df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
+            df_prev['dia_semana_pt'] = df_prev['dia_semana'].map({
+                'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
+                'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+            })
+            curva_proj = calcular_curva(df_prev, dias_selecionados, sufixo=" (Projetado)")
+        else:
+            curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetado)")
 
-        curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetada)")
+        # Exibir tabelas e gráficos
+        curva_comparativa = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
+        curva_fmt = curva_comparativa.copy()
+        curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+        curva_fmt['Projetado (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+        curva_fmt = curva_fmt[['Histórico (%)', 'Projetado (%)']]
 
-        # Exibindo as tabelas e gráficos
-        st.write("📊 Tabela de Ligações por Semana e Percentual de Cada Dia:")
-        df_result = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
-        st.write(df_result)
+        st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
+        st.dataframe(curva_fmt, use_container_width=True)
 
-        # Gráfico
-        df_plot = pd.concat([curva_base, curva_proj], axis=1).reset_index()
-        df_plot = df_plot.melt(id_vars=["rotulo"], value_vars=["Percentual (Histórico)", "Percentual (Projetada)"], 
-                               var_name="Curva", value_name="Percentual")
-        st.altair_chart(alt.Chart(df_plot).mark_line().encode(
-            x='rotulo:N', y='Percentual:Q', color='Curva:N', tooltip=['rotulo', 'Percentual', 'Curva']
-        ).properties(width=800, height=400))
+        # Gráfico comparativo
+        df_temp = curva_comparativa.reset_index()
+        df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
+        df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
+
+        cor_azul_escuro = '#90caf9' if dark_mode else '#002f6c'
+        cor_azul_claro = '#bbdefb' if dark_mode else '#0059b3'
+        fundo_grafico = '#121212' if dark_mode else 'white'
+
+        chart_comp = alt.Chart(df_plot).mark_line(point=True).encode(
+            x=alt.X('Categoria:N', title='Ordem e Dia da Semana', sort=None),
+            y=alt.Y('Percentual:Q', title='Percentual (%)'),
+            color=alt.Color('Tipo:N', scale=alt.Scale(domain=list(df_plot['Tipo'].unique()), range=[cor_azul_escuro, cor_azul_claro])),
+            tooltip=['Categoria', 'Tipo', alt.Tooltip('Percentual', format='.2f')]
+        ).properties(width=800, height=350, background=fundo_grafico).interactive()
+
+        st.subheader("📈 Evolução em Gráfico de Linha")
+        st.altair_chart(chart_comp, use_container_width=True)
+
+        # Gráfico diário
+        df_mes_proj = df_proj if not df_proj.empty else df_prev
+        if df_mes_proj is not None:
+            total_mes = df_mes_proj['y'].sum()
+            if total_mes > 0:
+                df_dia = df_mes_proj[['ds', 'y']].copy()
+                df_dia['percentual'] = df_dia['y'] / total_mes * 100
+                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_azul_escuro).encode(
+                    x=alt.X('ds:T', title='Data'),
+                    y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
+                    tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
+                ).properties(width=800, height=350, background=fundo_grafico).interactive()
+                st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
+                st.altair_chart(chart_dia, use_container_width=True)
+
+        # Exportação Excel
+        st.subheader("📥 Exportar Resultado")
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            curva_comparativa.reset_index().to_excel(writer, index=False, sheet_name="Comparativo")
+            if df_mes_proj is not None:
+                df_export = df_mes_proj[['ds', 'y']].copy()
+                total_proj = df_export['y'].sum()
+                df_export['Percentual (%)'] = df_export['y'] / total_proj * 100
+                df_export['Percentual (%)'] = df_export['Percentual (%)'].round(2)
+                df_export.columns = ['Data', 'Quantidade', 'Percentual (%)']
+                df_export.to_excel(writer, index=False, sheet_name="Curva Diária Projeção")
+        st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes_SERCOM.xlsx")
+
     except Exception as e:
-        st.error(f"Ocorreu um erro: {str(e)}")
+        st.error(f"Erro ao processar: {e}")
