@@ -172,7 +172,7 @@ if uploaded_file:
         st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
         st.dataframe(curva_fmt, use_container_width=True)
 
-        # Gráfico comparativo
+        # Gráfico comparativo + tabela de valores
         df_temp = curva_comparativa.reset_index()
         df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
         df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
@@ -188,23 +188,60 @@ if uploaded_file:
             tooltip=['Categoria', 'Tipo', alt.Tooltip('Percentual', format='.2f')]
         ).properties(width=800, height=350, background=fundo_grafico).interactive()
 
+        # Tabela de valores para gráfico comparativo
+        df_labels = df_plot.copy()
+        df_labels['PercentualStr'] = df_labels['Percentual'].apply(lambda x: f"{x:.2f}%")
+
+        text_labels = alt.Chart(df_labels).mark_text(
+            align='center',
+            baseline='middle',
+            dy=10,
+            fontSize=12,
+            color='#999999' if dark_mode else '#444444'
+        ).encode(
+            x=alt.X('Categoria:N', sort=None),
+            y=alt.value(5),
+            text='PercentualStr:N',
+            detail='Tipo:N',
+            column='Tipo:N'
+        ).properties(width=800)
+
         st.subheader("📈 Evolução em Gráfico de Linha")
         st.altair_chart(chart_comp, use_container_width=True)
+        st.markdown("**Tabela de Valores:**")
+        st.altair_chart(text_labels, use_container_width=True)
 
-        # Gráfico diário
-        df_mes_proj = df_proj if not df_proj.empty else df_prev
+        # Gráfico diário + tabela de valores
+        df_mes_proj = df_proj if not df_proj.empty else df_prev if 'df_prev' in locals() else None
         if df_mes_proj is not None:
             total_mes = df_mes_proj['y'].sum()
             if total_mes > 0:
                 df_dia = df_mes_proj[['ds', 'y']].copy()
                 df_dia['percentual'] = df_dia['y'] / total_mes * 100
+                df_dia['percentual_str'] = df_dia['percentual'].apply(lambda x: f"{x:.2f}%")
+
                 chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_azul_escuro).encode(
                     x=alt.X('ds:T', title='Data'),
                     y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
                     tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
                 ).properties(width=800, height=350, background=fundo_grafico).interactive()
+
+                text_dia_labels = alt.Chart(df_dia).mark_text(
+                    align='center',
+                    baseline='middle',
+                    dy=10,
+                    fontSize=12,
+                    color='#999999' if dark_mode else '#444444'
+                ).encode(
+                    x=alt.X('ds:T'),
+                    y=alt.value(5),
+                    text='percentual_str:N'
+                ).properties(width=800)
+
                 st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
                 st.altair_chart(chart_dia, use_container_width=True)
+                st.markdown("**Tabela de Valores Diários:**")
+                st.altair_chart(text_dia_labels, use_container_width=True)
 
         # Exportação Excel
         st.subheader("📥 Exportar Resultado")
