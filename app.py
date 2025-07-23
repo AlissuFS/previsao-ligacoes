@@ -9,29 +9,106 @@ import altair as alt
 # Configurar página
 st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide")
 
-# Cabeçalho com imagem via URL (evita erro de caminho)
-logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Logo-sercom.png/320px-Logo-sercom.png"
+# Opção Dark Mode
+dark_mode = st.sidebar.checkbox("🌓 Ativar Dark Mode", value=False)
 
+# CSS para layout fixo, responsivo e dark mode
+if dark_mode:
+    css_style = """
+    <style>
+    /* Layout fixo e responsivo */
+    .block-container {
+        max-width: 900px;
+        margin-left: auto;
+        margin-right: auto;
+        padding-top: 2rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        color: #e0e0e0;
+        background-color: #121212;
+    }
+    /* Cabeçalho */
+    div[style*="background-color:#002f6c"] {
+        background-color: #0d47a1 !important;
+        border-bottom: 3px solid #2196f3 !important;
+    }
+    /* Texto do cabeçalho */
+    div[style*="background-color:#0d47a1"] h1 {
+        color: #e0e0e0 !important;
+    }
+    /* Botões */
+    .stButton>button, .stDownloadButton>button {
+        background-color: #2196f3 !important;
+        color: white !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+    }
+    /* Fundo geral */
+    .css-18e3th9 {
+        background-color: #121212 !important;
+    }
+    /* Scrollbars escuros */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #121212;
+    }
+    ::-webkit-scrollbar-thumb {
+        background-color: #2196f3;
+        border-radius: 10px;
+    }
+    </style>
+    """
+else:
+    css_style = """
+    <style>
+    /* Layout fixo e responsivo */
+    .block-container {
+        max-width: 900px;
+        margin-left: auto;
+        margin-right: auto;
+        padding-top: 2rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        color: #000000;
+        background-color: white;
+    }
+    /* Cabeçalho */
+    div[style*="background-color:#002f6c"] {
+        background-color: #002f6c !important;
+        border-bottom: 3px solid #0059b3 !important;
+    }
+    /* Texto do cabeçalho */
+    div[style*="background-color:#002f6c"] h1 {
+        color: white !important;
+    }
+    /* Botões */
+    .stButton>button, .stDownloadButton>button {
+        background-color: #002f6c !important;
+        color: white !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+    }
+    /* Fundo geral */
+    .css-18e3th9 {
+        background-color: white !important;
+    }
+    </style>
+    """
+
+st.markdown(css_style, unsafe_allow_html=True)
+
+# Logo hospedado no GitHub
+logo_url = "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif"
+
+# Cabeçalho visual
 st.markdown(f"""
     <div style="background-color:#002f6c; padding:12px 24px; display:flex; align-items:center; border-bottom: 3px solid #0059b3;">
         <img src="{logo_url}" style="height:42px; margin-right:20px;" alt="Logo SERCOM">
         <h1 style="color:#ffffff; font-size:1.6rem; margin:0;">SERCOM Digitais - Projeção de Ligações</h1>
     </div>
-""", unsafe_allow_html=True)
-
-# CSS moderno
-st.markdown("""
-<style>
-.block-container {
-    padding-top: 2rem;
-}
-.stButton>button, .stDownloadButton>button {
-    background-color: #002f6c !important;
-    color: white !important;
-    font-weight: 600 !important;
-    border-radius: 6px !important;
-}
-</style>
 """, unsafe_allow_html=True)
 
 # Upload da base
@@ -43,7 +120,6 @@ dias_selecionados = st.multiselect("📌 Selecione os dias da semana a considera
 
 if uploaded_file:
     try:
-        # Leitura da base
         df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(uploaded_file)
         df.columns = df.columns.str.strip()
         if 'Data' not in df.columns or 'Quantidade de Ligações' not in df.columns:
@@ -70,7 +146,6 @@ if uploaded_file:
         mes_base = mes_map[mes_base_str]
         mes_proj = pd.Period(mes_proj_str, freq='M')
 
-        # Função de cálculo de curva semanal
         def calcular_curva(df_mes, dias_filtrados, sufixo=""):
             df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
             if df_mes.empty:
@@ -115,7 +190,6 @@ if uploaded_file:
         else:
             curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetado)")
 
-        # Comparação
         curva_comparativa = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
         curva_fmt = curva_comparativa.copy()
         curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
@@ -129,8 +203,8 @@ if uploaded_file:
         df_temp = curva_comparativa.reset_index()
         df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
         df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
-        cor_azul_escuro = '#002f6c'
-        cor_azul_claro = '#0059b3'
+        cor_azul_escuro = '#002f6c' if not dark_mode else '#90caf9'
+        cor_azul_claro = '#0059b3' if not dark_mode else '#bbdefb'
         chart_comp = alt.Chart(df_plot).mark_line(point=True).encode(
             x=alt.X('Categoria:N', title='Ordem e Dia da Semana', sort=None),
             y=alt.Y('Percentual:Q', title='Percentual (%)'),
@@ -141,14 +215,15 @@ if uploaded_file:
         st.subheader("📈 Evolução em Gráfico de Linha")
         st.altair_chart(chart_comp, use_container_width=True)
 
-        # Gráfico diário (sem média móvel)
+        # Gráfico diário
         df_mes_proj = df_proj if not df_proj.empty else df_prev
         if df_mes_proj is not None:
             total_mes = df_mes_proj['y'].sum()
             if total_mes > 0:
                 df_dia = df_mes_proj[['ds', 'y']].copy()
                 df_dia['percentual'] = df_dia['y'] / total_mes * 100
-                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_azul_escuro).encode(
+                cor_linha = '#002f6c' if not dark_mode else '#90caf9'
+                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_linha).encode(
                     x=alt.X('ds:T', title='Data'),
                     y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
                     tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
