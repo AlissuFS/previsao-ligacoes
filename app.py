@@ -12,7 +12,7 @@ st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layo
 # Opção Dark Mode
 dark_mode = st.sidebar.checkbox("🌓 Ativar Dark Mode", value=False)
 
-# CSS ajustado para dark mode completo e sem layout fixo
+# CSS atualizado para dark mode + labels e inputs
 if dark_mode:
     css_style = """
     <style>
@@ -21,16 +21,18 @@ if dark_mode:
         background-color: #121212;
         color: #e0e0e0;
     }
-    body {
-        background-color: #121212;
-        color: #e0e0e0;
-    }
     .stApp {
         background-color: #121212;
         color: #e0e0e0;
     }
-    .stMarkdown, .stText, .stSelectbox, .stMultiselect, .stTextInput {
+    label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect label,
+    .stTextArea label, .stDateInput label, .stFileUploader label {
         color: #e0e0e0 !important;
+    }
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb], .stMultiselect div[data-baseweb] {
+        background-color: #1e1e1e !important;
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
     }
     .stButton>button, .stDownloadButton>button {
         background-color: #2196f3 !important;
@@ -55,6 +57,14 @@ else:
         background-color: white;
         color: black;
     }
+    label, .stMarkdown {
+        color: black !important;
+    }
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb], .stMultiselect div[data-baseweb] {
+        background-color: white !important;
+        color: black !important;
+        border-color: #ccc !important;
+    }
     .stButton>button, .stDownloadButton>button {
         background-color: #002f6c !important;
         color: white !important;
@@ -67,8 +77,6 @@ st.markdown(css_style, unsafe_allow_html=True)
 
 # Logo
 logo_url = "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif"
-
-# Cabeçalho
 st.markdown(f"""
     <div style="background-color:#002f6c; padding:12px 24px; display:flex; align-items:center; border-bottom: 3px solid #0059b3;">
         <img src="{logo_url}" style="height:42px; margin-right:20px;" alt="Logo SERCOM">
@@ -190,8 +198,7 @@ if uploaded_file:
             if total_mes > 0:
                 df_dia = df_mes_proj[['ds', 'y']].copy()
                 df_dia['percentual'] = df_dia['y'] / total_mes * 100
-                cor_linha = cor_azul_escuro
-                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_linha).encode(
+                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_azul_escuro).encode(
                     x=alt.X('ds:T', title='Data'),
                     y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
                     tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
