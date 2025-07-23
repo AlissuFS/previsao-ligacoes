@@ -1,4 +1,10 @@
-import pandas as pd import numpy as np from prophet import Prophet from prophet.serialize import model_to_json, model_from_json import streamlit as st import io import holidays
+import pandas as pd
+import numpy as np
+from prophet import Prophet
+from prophet.serialize import model_to_json, model_from_json
+import streamlit as st
+import io
+import holidays
 
 st.set_page_config(page_title="Previsão de Ligações por Dia da Semana", layout="wide") st.title("📞 Previsão de Ligações com IA")
 
