@@ -5,20 +5,50 @@ import io
 from datetime import datetime, timedelta
 from prophet import Prophet
 
-# Configurar a página
-st.set_page_config(page_title="Comparativo e Projeção de Ligações", layout="wide")
-st.title("📞 Comparativo e Projeção de Ligações por Dia da Semana")
+# Configurar a página com identidade visual
+st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide")
 
-# Upload
-uploaded_file = st.file_uploader("Envie a planilha com 'Data' e 'Quantidade de Ligações'", type=[".xlsx", ".xls", ".csv"])
+# CSS customizado para visual mais sofisticado
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f4f6f9;
+    }
+    header, .reportview-container .main footer {visibility: hidden;}
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    h1 {
+        color: #002f6c;
+    }
+    .stButton>button {
+        background-color: #002f6c;
+        color: white;
+        font-weight: bold;
+    }
+    .stDownloadButton>button {
+        background-color: #002f6c;
+        color: white;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Cabeçalho com identidade SERCOM
+st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Logo-sercom.png/320px-Logo-sercom.png", width=200)
+st.title("📊 SERCOM Digitais - Análise e Projeção de Ligações por Dia da Semana")
+
+uploaded_file = st.file_uploader("📁 Envie a planilha com 'Data' e 'Quantidade de Ligações'", type=[".xlsx", ".xls", ".csv"])
 
 # Dias da semana selecionáveis
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
-dias_selecionados = st.multiselect("Selecionar dias da semana para análise", dias_semana_port, default=dias_semana_port)
+dias_selecionados = st.multiselect("📌 Selecione os dias da semana a considerar", dias_semana_port, default=dias_semana_port)
 
 if uploaded_file:
     try:
-        # Leitura
         if uploaded_file.name.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(uploaded_file)
         else:
@@ -43,7 +73,7 @@ if uploaded_file:
 
         col1, col2 = st.columns(2)
         with col1:
-            mes_base_str = st.selectbox("🗓️ Mês base (Histórico)", list(mes_map.keys()), index=0)
+            mes_base_str = st.selectbox("📅 Mês base (Histórico)", list(mes_map.keys()), index=0)
         with col2:
             mes_proj_str = st.text_input("🔮 Mês projetado (AAAA-MM)", value=str((datetime.now() + timedelta(days=30)).strftime('%Y-%m')))
 
@@ -58,12 +88,12 @@ if uploaded_file:
             def ocorrencia_semana(data):
                 dia = data.day
                 dia_semana = data.weekday()
-                return sum((datetime(data.year, data.month, d).weekday() == dia_semana)
-                           for d in range(1, dia + 1))
+                return sum((datetime(data.year, data.month, d).weekday() == dia_semana) for d in range(1, dia + 1))
 
             df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
             ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
             df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
+            df_mes['y'] = df_mes['y'].clip(lower=0)
             grupo = df_mes.groupby('rotulo')['y'].sum()
             grupo_total = grupo.sum()
             percentual = grupo / grupo_total * 100
@@ -71,14 +101,11 @@ if uploaded_file:
             return percentual
 
         curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, sufixo=" (Histórico)")
-
-        # Projeção via Prophet se mês futuro não estiver na base
         df_proj = df[df['ano_mes'] == mes_proj]
 
         if df_proj.empty:
-            st.info("🔮 Gerando previsão com IA para o mês selecionado...")
+            st.info("📈 Gerando previsão com IA para o mês projetado...")
 
-            # Limpeza de outliers
             Q1 = df['y'].quantile(0.25)
             Q3 = df['y'].quantile(0.75)
             IQR = Q3 - Q1
@@ -94,6 +121,7 @@ if uploaded_file:
             previsao = modelo.predict(df_futuro)
 
             df_prev = previsao[['ds', 'yhat']].rename(columns={'yhat': 'y'})
+            df_prev['y'] = df_prev['y'].clip(lower=0)
             df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
             df_prev['dia_semana_pt'] = df_prev['dia_semana'].map({
                 'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
@@ -112,14 +140,14 @@ if uploaded_file:
         st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
         st.dataframe(curva_fmt, use_container_width=True)
 
-        st.subheader("📈 Gráfico de Linha - Comparativo")
+        st.subheader("📈 Evolução em Gráfico de Linha")
         st.line_chart(curva_comparativa)
 
-        st.subheader("📄 Baixar Excel")
+        st.subheader("📥 Exportar Resultado")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             curva_comparativa.reset_index().to_excel(writer, index=False, sheet_name="Comparativo")
-        st.download_button("Download Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes.xlsx")
+        st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes_SERCOM.xlsx")
 
     except Exception as e:
         st.error(f"Erro ao processar: {e}")
