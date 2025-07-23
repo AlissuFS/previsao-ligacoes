@@ -143,7 +143,7 @@ if uploaded_file:
         st.subheader("📈 Evolução em Gráfico de Linha")
         st.line_chart(curva_comparativa)
 
-        # --- Novo bloco para gráfico diário da projeção ---
+        # --- Gráfico diário da projeção ---
         df_curva_dia = None
         if not df_proj.empty:
             df_mes_proj = df_proj.copy()
@@ -161,10 +161,20 @@ if uploaded_file:
             st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
             st.line_chart(df_curva_dia['percentual'])
 
+        # --- Exportação com duas abas ---
         st.subheader("📥 Exportar Resultado")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            # Aba comparativo
             curva_comparativa.reset_index().to_excel(writer, index=False, sheet_name="Comparativo")
+
+            # Aba curva diária projeção
+            if df_curva_dia is not None and not df_curva_dia.empty:
+                df_curva_dia_export = df_curva_dia.reset_index()
+                df_curva_dia_export.columns = ['Data', 'Quantidade', 'Percentual (%)']
+                df_curva_dia_export['Percentual (%)'] = df_curva_dia_export['Percentual (%)'].round(2)
+                df_curva_dia_export.to_excel(writer, index=False, sheet_name="Curva Diária Projeção")
+
         st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes_SERCOM.xlsx")
 
     except Exception as e:
