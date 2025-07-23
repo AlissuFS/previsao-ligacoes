@@ -5,28 +5,21 @@ import io
 from datetime import datetime, timedelta
 from prophet import Prophet
 import altair as alt
-import base64
 
-# Configurar a página
+# Configurar página
 st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide")
 
-# Carregar imagem em base64
-def carregar_logo_base64(caminho_imagem):
-    with open(caminho_imagem, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
+# Cabeçalho com imagem via URL (evita erro de caminho)
+logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Logo-sercom.png/320px-Logo-sercom.png"
 
-logo_path = "/mnt/data/a6cc5af4-bf0e-405b-96f6-ea4c67aa8220.png"  # Substitua se for outro nome
-logo_base64 = carregar_logo_base64(logo_path)
-
-# Cabeçalho fixo customizado com base64
 st.markdown(f"""
     <div style="background-color:#002f6c; padding:12px 24px; display:flex; align-items:center; border-bottom: 3px solid #0059b3;">
-        <img src="data:image/png;base64,{logo_base64}" style="height:42px; margin-right:20px;" alt="Logo SERCOM">
+        <img src="{logo_url}" style="height:42px; margin-right:20px;" alt="Logo SERCOM">
         <h1 style="color:#ffffff; font-size:1.6rem; margin:0;">SERCOM Digitais - Projeção de Ligações</h1>
     </div>
 """, unsafe_allow_html=True)
 
-# CSS visual moderno
+# CSS moderno
 st.markdown("""
 <style>
 .block-container {
@@ -41,7 +34,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Upload
+# Upload da base
 uploaded_file = st.file_uploader("📁 Envie a planilha com 'Data' e 'Quantidade de Ligações'", type=[".xlsx", ".xls", ".csv"])
 
 # Dias da semana
@@ -77,7 +70,7 @@ if uploaded_file:
         mes_base = mes_map[mes_base_str]
         mes_proj = pd.Period(mes_proj_str, freq='M')
 
-        # Função de cálculo
+        # Função de cálculo de curva semanal
         def calcular_curva(df_mes, dias_filtrados, sufixo=""):
             df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
             if df_mes.empty:
@@ -132,7 +125,7 @@ if uploaded_file:
         st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
         st.dataframe(curva_fmt, use_container_width=True)
 
-        # Gráfico linha comparativo
+        # Gráfico comparativo
         df_temp = curva_comparativa.reset_index()
         df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
         df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
@@ -148,7 +141,7 @@ if uploaded_file:
         st.subheader("📈 Evolução em Gráfico de Linha")
         st.altair_chart(chart_comp, use_container_width=True)
 
-        # Curva diária
+        # Gráfico diário (sem média móvel)
         df_mes_proj = df_proj if not df_proj.empty else df_prev
         if df_mes_proj is not None:
             total_mes = df_mes_proj['y'].sum()
@@ -163,7 +156,7 @@ if uploaded_file:
                 st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
                 st.altair_chart(chart_dia, use_container_width=True)
 
-        # Exportação
+        # Exportação Excel
         st.subheader("📥 Exportar Resultado")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
