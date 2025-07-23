@@ -44,16 +44,16 @@ if uploaded_file:
             'Sunday': 'Domingo'
         })
 
-        # Último mês completo
-        meses_disponiveis = df['ano_mes'].sort_values().unique()
-        ultimo_mes = pd.Period(datetime.now(), freq='M') - 1
-        if ultimo_mes not in meses_disponiveis:
-            ultimo_mes = df['ano_mes'].max()
+        # Seletor de mês com base nos dados disponíveis
+        meses_disponiveis = sorted(df['ano_mes'].unique(), reverse=True)
+        mes_str_map = {str(m): m for m in meses_disponiveis}
+        mes_selecionado_str = st.selectbox("Selecione o mês para análise", list(mes_str_map.keys()))
+        mes_selecionado = mes_str_map[mes_selecionado_str]
 
-        df_mes = df[df['ano_mes'] == ultimo_mes].copy()
+        df_mes = df[df['ano_mes'] == mes_selecionado].copy()
 
         if df_mes.empty:
-            st.warning("Não há dados suficientes para o último mês completo.")
+            st.warning("Não há dados para o mês selecionado.")
             st.stop()
 
         # Cálculo de ordem de ocorrência no mês
@@ -81,7 +81,7 @@ if uploaded_file:
         percentual = grupo / grupo_total * 100
         percentual_formatado = percentual.apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
 
-        st.subheader(f"📅 Representatividade - Mês {ultimo_mes.strftime('%m/%Y')}")
+        st.subheader(f"📅 Representatividade - Mês {mes_selecionado.strftime('%m/%Y')}")
         st.dataframe(percentual_formatado.rename("Percentual"), use_container_width=True)
 
         # Gráfico de linha
