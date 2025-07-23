@@ -106,6 +106,60 @@ if uploaded_file:
             por_hora = previsao.groupby('hora')['yhat'].mean()
             st.bar_chart(por_hora)
 
+        # --- INÍCIO: CURVA MÊS REFERÊNCIA ---
+        import calendar
+
+        mes_referencia = st.text_input(
+            "Digite o mês referência para detalhamento (formato: AAAA-MM)", 
+            value=str(df['ds'].dt.to_period('M').max())  # valor default: último mês disponível
+        )
+
+        if mes_referencia:
+            try:
+                mes_ref_period = pd.Period(mes_referencia, freq='M')
+                previsao_mes = previsao[previsao['ds'].dt.to_period('M') == mes_ref_period].copy()
+                
+                if previsao_mes.empty:
+                    st.warning("Não há dados para o mês informado.")
+                else:
+                    previsao_mes['dia_semana'] = previsao_mes['ds'].dt.day_name().map(dias_em_portugues)
+                    previsao_mes['dia_mes'] = previsao_mes['ds'].dt.day
+
+                    def ocorrencia_semana(date):
+                        day_of_week = date.weekday()  # 0=segunda ... 6=domingo
+                        dia = date.day
+                        count = sum(1 for d in range(1, dia + 1)
+                                    if pd.Timestamp(date.year, date.month, d).weekday() == day_of_week)
+                        return count
+
+                    previsao_mes['ocorrencia'] = previsao_mes['ds'].apply(ocorrencia_semana)
+                    total_mes = previsao_mes['yhat'].sum()
+                    previsao_mes['percentual'] = previsao_mes['yhat'] / total_mes * 100
+
+                    ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
+                    previsao_mes['dia_ocorrencia'] = previsao_mes.apply(
+                        lambda row: f"{ordinais.get(row['ocorrencia'], str(row['ocorrencia']) + 'ª')} {row['dia_semana']}", axis=1)
+
+                    st.subheader(f"📈 Curva de Volumetria Percentual para {mes_referencia}")
+                    st.dataframe(previsao_mes[['ds', 'dia_ocorrencia', 'percentual']].sort_values('ds'))
+
+                    # Ordenar para gráfico (1ª segunda, 2ª segunda, ... 1ª terça, 2ª terça, ...)
+                    def ordena_key(x):
+                        parte_ord = x.split(' ')[0]
+                        parte_dia = x.split(' ')[1]
+                        ordem_ord = list(ordinais.values()).index(parte_ord) if parte_ord in ordinais.values() else 99
+                        ordem_dia = list(dias_em_portugues.values()).index(parte_dia)
+                        return (ordem_ord, ordem_dia)
+
+                    curva = previsao_mes.groupby('dia_ocorrencia')['percentual'].sum().reindex(
+                        sorted(previsao_mes['dia_ocorrencia'].unique(), key=ordena_key)
+                    )
+
+                    st.bar_chart(curva)
+            except Exception as ex:
+                st.error(f"Erro ao processar o mês referência: {ex}")
+        # --- FIM: CURVA MÊS REFERÊNCIA ---
+
         # Exportar resultado
         st.subheader("📥 Baixar Resultado")
         resultado_df = percentual.reset_index()
@@ -118,6 +172,10 @@ if uploaded_file:
                 mensal.reset_index().to_excel(writer, index=False, sheet_name="Mensal")
             if pred_por_hora and 'Hora' in df.columns:
                 por_hora.reset_index().to_excel(writer, index=False, sheet_name="PorHora")
+            # Adicionar aba do mês referência detalhado
+            if mes_referencia and not previsao_mes.empty:
+                previsao_mes_export = previsao_mes[['ds', 'dia_ocorrencia', 'percentual']].sort_values('ds')
+                previsao_mes_export.to_excel(writer, index=False, sheet_name="MesReferencia")
 
         st.download_button("Baixar Excel", data=buffer.getvalue(), file_name="projecao_ligacoes_completa.xlsx")
 
