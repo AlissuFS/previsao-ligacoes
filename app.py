@@ -176,28 +176,44 @@ if uploaded_file:
                 'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
                 'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
             })
-            df_proj = df_prev
+            curva_proj = calcular_curva(df_prev, dias_selecionados, sufixo=" (Projetado)")
         else:
-            st.info("📈 Gerando projeção a partir dos dados históricos...")
+            curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetado)")
 
-        curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projeção)")
+        curva_comparativa = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
+        curva_fmt = curva_comparativa.copy()
+        curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+        curva_fmt['Projetado (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+        curva_fmt = curva_fmt[['Histórico (%)', 'Projetado (%)']]
 
-        # Plotando gráfico
-        df_plot = pd.concat([curva_base, curva_proj], axis=1)
-        df_plot.columns = ['Histórico', 'Projeção']
-        df_plot = df_plot.reset_index().melt(id_vars='index', value_vars=['Histórico', 'Projeção'])
-        df_plot['dia_semana'] = df_plot['index'].str.split(' ').str[1]
-        df_plot['ordem'] = df_plot['index'].str.split(' ').str[0]
-        df_plot['ordem'] = df_plot['ordem'].replace({'1ª': 1, '2ª': 2, '3ª': 3, '4ª': 4, '5ª': 5}).astype(int)
-        df_plot = df_plot.sort_values(by=['ordem', 'dia_semana'])
+        st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
+        st.dataframe(curva_fmt, use_container_width=True)
 
-        chart = alt.Chart(df_plot).mark_bar().encode(
-            x='dia_semana:N',
-            y='value:Q',
-            color='variable:N',
-            column='variable:N'
-        ).properties(width=150)
-        st.altair_chart(chart, use_container_width=True)
+        # Gráfico comparativo
+        df_temp = curva_comparativa.reset_index()
+        df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
+        df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
+
+        cor_azul_escuro = '#90caf9' if dark_mode else '#002f6c'
+        cor_azul_claro = '#bbdefb' if dark_mode else '#0059b3'
+        fundo_grafico = '#121212' if dark_mode else 'white'
+
+        chart_comp = alt.Chart(df_plot).mark_line(point=True).encode(
+            x=alt.X('Categoria:N', title='Ordem e Dia da Semana', sort=None),
+            y=alt.Y('Percentual:Q', title='Percentual (%)'),
+            color=alt.Color('Tipo:N', scale=alt.Scale(domain=list(df_plot['Tipo'].unique()), range=[cor_azul_escuro, cor_azul_claro])),
+            tooltip=['Categoria', 'Tipo', alt.Tooltip('Percentual', format='.2f')]
+        ).properties(width=800, height=350, background=fundo_grafico).interactive()
+
+        st.subheader("📈 Evolução em Gráfico de Linha")
+        st.altair_chart(chart_comp, use_container_width=True)
+
+        # Exportação Excel
+        st.subheader("📥 Exportar Resultado")
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            curva_comparativa.reset_index().to_excel(writer, index=False, sheet_name="Comparativo")
+        st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes_SERCOM.xlsx")
 
     except Exception as e:
-        st.error(f"Ocorreu um erro: {e}")
+        st.error(f"Erro ao processar: {e}")
