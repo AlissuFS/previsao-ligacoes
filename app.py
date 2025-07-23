@@ -119,38 +119,21 @@ if uploaded_file:
         mes_base = mes_map[mes_base_str]
         mes_proj = pd.Period(mes_proj_str, freq='M')
 
-        # Função de cálculo da curva
         def calcular_curva(df_mes, dias_filtrados, sufixo=""):
             df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
             if df_mes.empty:
                 return pd.Series(dtype=float)
-
-            # Função para calcular a ocorrência de uma semana no mês
             def ocorrencia_semana(data):
                 dia = data.day
-                dia_semana = data.weekday()  # 0 = segunda-feira, 6 = domingo
+                dia_semana = data.weekday()
                 return sum((datetime(data.year, data.month, d).weekday() == dia_semana) for d in range(1, dia + 1))
-
-            # Adiciona uma coluna 'ordem' que indica a ordem do dia da semana dentro do mês
             df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
-
-            # Definindo rótulos para os dias da semana
             ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
             df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
-
-            # Agrupamento por rótulo e somatório das ligações
             grupo = df_mes.groupby('rotulo')['y'].sum()
-
-            # Garantir que todos os dias da semana apareçam, incluindo os domingos (mesmo com zero)
-            dias_completos = dias_semana_port  # A lista completa de dias da semana
-            for dia in dias_completos:
-                if dia not in grupo.index:
-                    grupo[dia] = 0
-
             grupo_total = grupo.sum()
             percentual = grupo / grupo_total * 100
             percentual.name = f"Percentual{sufixo}"
-
             return percentual
 
         curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, sufixo=" (Histórico)")
@@ -208,11 +191,33 @@ if uploaded_file:
         st.subheader("📈 Evolução em Gráfico de Linha")
         st.altair_chart(chart_comp, use_container_width=True)
 
+        # Gráfico diário
+        df_mes_proj = df_proj if not df_proj.empty else df_prev
+        if df_mes_proj is not None:
+            total_mes = df_mes_proj['y'].sum()
+            if total_mes > 0:
+                df_dia = df_mes_proj[['ds', 'y']].copy()
+                df_dia['percentual'] = df_dia['y'] / total_mes * 100
+                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_azul_escuro).encode(
+                    x=alt.X('ds:T', title='Data'),
+                    y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
+                    tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
+                ).properties(width=800, height=350, background=fundo_grafico).interactive()
+                st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
+                st.altair_chart(chart_dia, use_container_width=True)
+
         # Exportação Excel
         st.subheader("📥 Exportar Resultado")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             curva_comparativa.reset_index().to_excel(writer, index=False, sheet_name="Comparativo")
+            if df_mes_proj is not None:
+                df_export = df_mes_proj[['ds', 'y']].copy()
+                total_proj = df_export['y'].sum()
+                df_export['Percentual (%)'] = df_export['y'] / total_proj * 100
+                df_export['Percentual (%)'] = df_export['Percentual (%)'].round(2)
+                df_export.columns = ['Data', 'Quantidade', 'Percentual (%)']
+                df_export.to_excel(writer, index=False, sheet_name="Curva Diária Projeção")
         st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes_SERCOM.xlsx")
 
     except Exception as e:
