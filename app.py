@@ -106,19 +106,24 @@ if uploaded_file:
             por_hora = previsao.groupby('hora')['yhat'].mean()
             st.bar_chart(por_hora)
 
-        # --- INÍCIO: CURVA MÊS REFERÊNCIA ---
-        import calendar
-
+        # --- INÍCIO: CURVA MÊS REFERÊNCIA COM FILTRO DE DIAS ---
         mes_referencia = st.text_input(
             "Digite o mês referência para detalhamento (formato: AAAA-MM)", 
             value=str(df['ds'].dt.to_period('M').max())  # valor default: último mês disponível
+        )
+
+        dias_semana_opcoes = list(dias_em_portugues.values())
+        dias_selecionados = st.multiselect(
+            "Selecione os dias da semana para considerar no percentual",
+            options=dias_semana_opcoes,
+            default=dias_semana_opcoes  # por padrão já seleciona todos
         )
 
         if mes_referencia:
             try:
                 mes_ref_period = pd.Period(mes_referencia, freq='M')
                 previsao_mes = previsao[previsao['ds'].dt.to_period('M') == mes_ref_period].copy()
-                
+
                 if previsao_mes.empty:
                     st.warning("Não há dados para o mês informado.")
                 else:
@@ -126,7 +131,7 @@ if uploaded_file:
                     previsao_mes['dia_mes'] = previsao_mes['ds'].dt.day
 
                     def ocorrencia_semana(date):
-                        day_of_week = date.weekday()  # 0=segunda ... 6=domingo
+                        day_of_week = date.weekday()
                         dia = date.day
                         count = sum(1 for d in range(1, dia + 1)
                                     if pd.Timestamp(date.year, date.month, d).weekday() == day_of_week)
@@ -140,10 +145,30 @@ if uploaded_file:
                     previsao_mes['dia_ocorrencia'] = previsao_mes.apply(
                         lambda row: f"{ordinais.get(row['ocorrencia'], str(row['ocorrencia']) + 'ª')} {row['dia_semana']}", axis=1)
 
-                    st.subheader(f"📈 Curva de Volumetria Percentual para {mes_referencia}")
-                    st.dataframe(previsao_mes[['ds', 'dia_ocorrencia', 'percentual']].sort_values('ds'))
+                    # Criar DataFrame com todas ocorrências
+                    todas_ocorrencias = previsao_mes['dia_ocorrencia'].unique()
+                    df_curva = pd.DataFrame({'dia_ocorrencia': todas_ocorrencias}).set_index('dia_ocorrencia')
 
-                    # Ordenar para gráfico (1ª segunda, 2ª segunda, ... 1ª terça, 2ª terça, ...)
+                    def dia_selecionado(dia_ocor):
+                        dia = dia_ocor.split(' ', 1)[1]
+                        return dia in dias_selecionados
+
+                    def percentual_formatado(dia_ocor):
+                        if dia_selecionado(dia_ocor):
+                            valor = previsao_mes.loc[previsao_mes['dia_ocorrencia'] == dia_ocor, 'percentual'].sum()
+                            return f"{valor:.2f}%"
+                        else:
+                            return "0%"
+
+                    df_curva['Percentual'] = df_curva.index.map(percentual_formatado)
+
+                    st.subheader(f"📈 Curva de Volumetria Percentual para {mes_referencia}")
+                    st.dataframe(df_curva)
+
+                    # Preparar dados para gráfico (usar valor numérico)
+                    df_curva_graf = df_curva.copy()
+                    df_curva_graf['PercentualNum'] = df_curva_graf['Percentual'].apply(lambda x: float(x.replace('%','')) if x != "0%" else 0.0)
+
                     def ordena_key(x):
                         parte_ord = x.split(' ')[0]
                         parte_dia = x.split(' ')[1]
@@ -151,14 +176,14 @@ if uploaded_file:
                         ordem_dia = list(dias_em_portugues.values()).index(parte_dia)
                         return (ordem_ord, ordem_dia)
 
-                    curva = previsao_mes.groupby('dia_ocorrencia')['percentual'].sum().reindex(
-                        sorted(previsao_mes['dia_ocorrencia'].unique(), key=ordena_key)
+                    curva = df_curva_graf['PercentualNum'].reindex(
+                        sorted(df_curva_graf.index, key=ordena_key)
                     )
-
                     st.bar_chart(curva)
+
             except Exception as ex:
                 st.error(f"Erro ao processar o mês referência: {ex}")
-        # --- FIM: CURVA MÊS REFERÊNCIA ---
+        # --- FIM: CURVA MÊS REFERÊNCIA COM FILTRO DE DIAS ---
 
         # Exportar resultado
         st.subheader("📥 Baixar Resultado")
