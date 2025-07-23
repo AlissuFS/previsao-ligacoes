@@ -143,6 +143,24 @@ if uploaded_file:
         st.subheader("📈 Evolução em Gráfico de Linha")
         st.line_chart(curva_comparativa)
 
+        # --- Novo bloco para gráfico diário da projeção ---
+        df_curva_dia = None
+        if not df_proj.empty:
+            df_mes_proj = df_proj.copy()
+        else:
+            df_mes_proj = df_prev.copy() if 'df_prev' in locals() else None
+
+        if df_mes_proj is not None and not df_mes_proj.empty:
+            total_mes = df_mes_proj['y'].sum()
+            if total_mes > 0:
+                df_curva_dia = df_mes_proj[['ds', 'y']].copy()
+                df_curva_dia['percentual'] = df_curva_dia['y'] / total_mes * 100
+                df_curva_dia = df_curva_dia.set_index('ds').sort_index()
+
+        if df_curva_dia is not None and not df_curva_dia.empty:
+            st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
+            st.line_chart(df_curva_dia['percentual'])
+
         st.subheader("📥 Exportar Resultado")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
