@@ -61,7 +61,16 @@ if uploaded_file:
         # Cria dataframe futuro
         futuro = modelo.make_future_dataframe(periods=90, freq='D')
         previsao = modelo.predict(futuro)
-        previsao['dia_semana'] = previsao['ds'].dt.day_name(locale='pt_BR')
+        dias_em_portugues = {
+    'Monday': 'Segunda-feira',
+    'Tuesday': 'Terça-feira',
+    'Wednesday': 'Quarta-feira',
+    'Thursday': 'Quinta-feira',
+    'Friday': 'Sexta-feira',
+    'Saturday': 'Sábado',
+    'Sunday': 'Domingo'
+}
+previsao['dia_semana'] = previsao['ds'].dt.day_name().map(dias_em_portugues)
         dias_futuros = previsao[previsao['ds'] > df['ds'].max()]
 
         # Percentual por dia da semana
