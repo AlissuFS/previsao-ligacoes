@@ -261,9 +261,10 @@ if uploaded_file:
         st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
         st.dataframe(curva_fmt, use_container_width=True)
 
-        # --- Gráfico comparativo com Altair ---
-        df_plot = curva_comparativa.reset_index().melt(id_vars='index', var_name='Tipo', value_name='Percentual')
-        df_plot.rename(columns={'index': 'Categoria'}, inplace=True)
+        # Correção do melt para o gráfico Altair
+        df_temp = curva_comparativa.reset_index()
+        df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
+        df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
 
         cor_azul_escuro = '#002f6c'
         cor_azul_claro = '#0059b3'
