@@ -19,7 +19,7 @@ st.sidebar.markdown("### 🔍 Configurações")
 # Dark Mode
 dark_mode = st.sidebar.checkbox("🌙 Modo Escuro", value=False)
 
-# CSS personalizado para modo claro e escuro
+# CSS para modo claro e escuro, sem cor roxa no menu
 css_style = """
 <style>
 .block-container {background-color: %s; color: %s;}
@@ -33,12 +33,11 @@ label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect l
     border-color: %s !important;
 }
 .stButton>button, .stDownloadButton>button {
-    background-color: #6600cc !important; /* roxo Sercom */
+    background-color: #6600cc !important;
     color: white !important;
     font-weight: 600 !important;
     border-radius: 6px !important;
 }
-/* Sidebar padrão sem cor roxa, só fundo branco/preto e texto */
 [data-testid="stSidebar"] {
     background-color: %s !important;
     color: %s !important;
@@ -48,19 +47,18 @@ label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect l
 }
 </style>
 """ % (
-    "#121212" if dark_mode else "white",  # block-container background
-    "#e0e0e0" if dark_mode else "black",  # block-container color
-    "#121212" if dark_mode else "white",  # stApp background
-    "#e0e0e0" if dark_mode else "black",  # stApp color
-    "#e0e0e0" if dark_mode else "black",  # label, markdown color
-    "#1e1e1e" if dark_mode else "white",  # input background
-    "#e0e0e0" if dark_mode else "black",  # input color
-    "#444" if dark_mode else "#ccc",      # input border
-    "#121212" if dark_mode else "white",  # sidebar background
-    "#e0e0e0" if dark_mode else "black",  # sidebar text color
-    "#e0e0e0" if dark_mode else "black",  # sidebar text color (all children)
+    "#121212" if dark_mode else "white",
+    "#e0e0e0" if dark_mode else "black",
+    "#121212" if dark_mode else "white",
+    "#e0e0e0" if dark_mode else "black",
+    "#e0e0e0" if dark_mode else "black",
+    "#1e1e1e" if dark_mode else "white",
+    "#e0e0e0" if dark_mode else "black",
+    "#444" if dark_mode else "#ccc",
+    "#121212" if dark_mode else "white",
+    "#e0e0e0" if dark_mode else "black",
+    "#e0e0e0" if dark_mode else "black"
 )
-
 st.markdown(css_style, unsafe_allow_html=True)
 
 # Upload
@@ -94,23 +92,20 @@ if uploaded_file:
 
     meses_disponiveis = sorted(df['ano_mes'].unique())
     meses_disponiveis_str = [str(m) for m in meses_disponiveis]
-
     ultimo_mes_hist = meses_disponiveis[-1]
 
     mes_base = st.sidebar.selectbox(
         "📅 Mês base (histórico)",
-        options=[str(m) for m in meses_disponiveis],
+        options=meses_disponiveis_str,
         index=meses_disponiveis_str.index(str(ultimo_mes_hist))
     )
     mes_base = pd.Period(mes_base, freq='M')
 
     meses_para_projetar = [m for m in meses_proximos if m not in meses_disponiveis]
-    meses_para_projetar_str = [str(m) for m in meses_para_projetar]
-
     meses_proj_str = st.sidebar.multiselect(
         "🌟 Meses projetados (futuros até +3 meses)",
-        options=meses_para_projetar_str,
-        default=meses_para_projetar_str
+        options=[str(m) for m in meses_para_projetar],
+        default=[str(m) for m in meses_para_projetar]
     )
     meses_proj = [pd.Period(m, freq='M') for m in meses_proj_str]
 
@@ -126,9 +121,15 @@ if uploaded_file:
         df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
         ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
         df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
+
+        max_ordem = df_mes['ordem'].max()
+        rotulos_esperados = [f"{ordinais.get(i)} {dia}" for dia in dias_filtrados for i in range(1, max_ordem + 1)]
+
         grupo = df_mes.groupby('rotulo')['y'].sum()
+        grupo = grupo.reindex(rotulos_esperados, fill_value=0)
+
         grupo_total = grupo.sum()
-        percentual = grupo / grupo_total * 100
+        percentual = grupo / grupo_total * 100 if grupo_total > 0 else grupo
         percentual.name = f"Percentual{sufixo}"
         return percentual
 
