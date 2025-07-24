@@ -10,7 +10,10 @@ import altair as alt
 st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide", initial_sidebar_state="expanded")
 
 # Sidebar
-st.sidebar.image("https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif", use_column_width=True)
+st.sidebar.image(
+    "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
+    use_container_width=True
+)
 st.sidebar.markdown("### 🔍 Configurações")
 
 # Dark Mode
