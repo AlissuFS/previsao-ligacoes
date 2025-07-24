@@ -19,7 +19,7 @@ st.sidebar.markdown("### 🔍 Configurações")
 # Dark Mode
 dark_mode = st.sidebar.checkbox("🌙 Modo Escuro", value=False)
 
-# CSS personalizado
+# CSS personalizado para cores da Sercom e legibilidade
 if dark_mode:
     css_style = """
     <style>
@@ -40,6 +40,9 @@ if dark_mode:
         border-radius: 6px !important;
     }
     ::placeholder { color: #aaaaaa !important; }
+    /* Sidebar Dark Mode */
+    .css-1d391kg {background-color: #3a006f !important;} /* fundo roxo escuro */
+    .css-1aumxhk {color: #e0e0e0 !important;} /* textos sidebar */
     </style>
     """
 else:
@@ -54,11 +57,14 @@ else:
         border-color: #ccc !important;
     }
     .stButton>button, .stDownloadButton>button {
-        background-color: #002f6c !important;
+        background-color: #6600cc !important; /* roxo Sercom */
         color: white !important;
         font-weight: 600 !important;
         border-radius: 6px !important;
     }
+    /* Sidebar fundo roxo */
+    .css-1d391kg {background-color: #6600cc !important;}
+    .css-1aumxhk {color: white !important;}
     </style>
     """
 st.markdown(css_style, unsafe_allow_html=True)
@@ -92,9 +98,12 @@ if uploaded_file:
     meses_disponiveis = sorted(df['ano_mes'].unique(), reverse=True)
     mes_map = {str(m): m for m in meses_disponiveis}
     mes_base_str = st.sidebar.selectbox("📅 Mês base (histórico)", list(mes_map.keys()), index=0)
-    meses_proj_str = st.sidebar.multiselect("🌟 Meses projetados (AAAA-MM)", [])
-
     mes_base = mes_map[mes_base_str]
+
+    # Meses projetados = meses disponíveis - mês base
+    meses_projetados_disp = [str(m) for m in meses_disponiveis if m != mes_base]
+    meses_proj_str = st.sidebar.multiselect("🌟 Meses projetados (AAAA-MM)", options=meses_projetados_disp)
+
     meses_proj = [pd.Period(m, freq='M') for m in meses_proj_str if m]
 
     def ocorrencia_semana(data):
@@ -178,11 +187,3 @@ if uploaded_file:
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             for mes_str, dados in resultados.items():
                 comp = dados['comparativo'].reset_index()
-                comp.to_excel(writer, index=False, sheet_name=f"Comparativo_{mes_str}")
-                df_export = dados['dados'][['ds', 'y']].copy()
-                total_proj = df_export['y'].sum()
-                df_export['Percentual (%)'] = df_export['y'] / total_proj * 100
-                df_export['Percentual (%)'] = df_export['Percentual (%)'].round(2)
-                df_export.columns = ['Data', 'Quantidade', 'Percentual (%)']
-                df_export.to_excel(writer, index=False, sheet_name=f"Curva_{mes_str}")
-        st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="projecoes_SERCOM.xlsx")
