@@ -9,22 +9,15 @@ import altair as alt
 # Configurar página
 st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide")
 
-# Opção Dark Mode
+# Dark Mode
 dark_mode = st.sidebar.checkbox("🌓 Ativar Dark Mode", value=False)
 
-# CSS atualizado para dark mode + labels e inputs
+# CSS para Dark/Light Mode
 if dark_mode:
     css_style = """
     <style>
-    .block-container {
-        padding-top: 2rem;
-        background-color: #121212;
-        color: #e0e0e0;
-    }
-    .stApp {
-        background-color: #121212;
-        color: #e0e0e0;
-    }
+    .block-container { padding-top: 2rem; background-color: #121212; color: #e0e0e0; }
+    .stApp { background-color: #121212; color: #e0e0e0; }
     label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect label,
     .stTextArea label, .stDateInput label, .stFileUploader label {
         color: #e0e0e0 !important;
@@ -40,26 +33,15 @@ if dark_mode:
         font-weight: 600 !important;
         border-radius: 6px !important;
     }
-    ::placeholder {
-        color: #aaaaaa !important;
-    }
+    ::placeholder { color: #aaaaaa !important; }
     </style>
     """
 else:
     css_style = """
     <style>
-    .block-container {
-        padding-top: 2rem;
-        background-color: white;
-        color: black;
-    }
-    .stApp {
-        background-color: white;
-        color: black;
-    }
-    label, .stMarkdown {
-        color: black !important;
-    }
+    .block-container { padding-top: 2rem; background-color: white; color: black; }
+    .stApp { background-color: white; color: black; }
+    label, .stMarkdown { color: black !important; }
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb], .stMultiselect div[data-baseweb] {
         background-color: white !important;
         color: black !important;
@@ -103,10 +85,12 @@ if uploaded_file:
         df['y'] = df['Quantidade de Ligações'].clip(lower=0)
         df['ano_mes'] = df['ds'].dt.to_period('M')
         df['dia_semana'] = df['ds'].dt.day_name()
-        df['dia_semana_pt'] = df['dia_semana'].map({
+        mapa_dias = {
             'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
             'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-        })
+        }
+        df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias)
+        df['dia_semana_pt'] = df['dia_semana_pt'].fillna(df['dia_semana'])
 
         # Seleção de meses
         meses_disponiveis = sorted(df['ano_mes'].unique(), reverse=True)
@@ -119,14 +103,15 @@ if uploaded_file:
         mes_base = mes_map[mes_base_str]
         mes_proj = pd.Period(mes_proj_str, freq='M')
 
+        def ocorrencia_semana(data):
+            dia_semana = data.weekday()
+            dias_mes = pd.date_range(start=data.replace(day=1), end=data)
+            return sum(d.weekday() == dia_semana for d in dias_mes)
+
         def calcular_curva(df_mes, dias_filtrados, sufixo=""):
             df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
             if df_mes.empty:
                 return pd.Series(dtype=float)
-            def ocorrencia_semana(data):
-                dia = data.day
-                dia_semana = data.weekday()
-                return sum((datetime(data.year, data.month, d).weekday() == dia_semana) for d in range(1, dia + 1))
             df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
             ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
             df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
@@ -141,24 +126,19 @@ if uploaded_file:
 
         if df_proj.empty:
             st.info("📈 Gerando previsão com IA para o mês projetado...")
-            Q1 = df['y'].quantile(0.25)
-            Q3 = df['y'].quantile(0.75)
+            Q1, Q3 = df['y'].quantile([0.25, 0.75])
             IQR = Q3 - Q1
-            filtro = (df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)
-            df_limpo = df[filtro][['ds', 'y']].copy().sort_values('ds')
+            df_limpo = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].sort_values('ds')
             modelo = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
             modelo.fit(df_limpo)
-            dias_proj = (mes_proj.to_timestamp(), (mes_proj + 1).to_timestamp() - timedelta(days=1))
-            futuro = pd.date_range(start=dias_proj[0], end=dias_proj[1], freq='D')
+            inicio, fim = mes_proj.to_timestamp(), (mes_proj + 1).to_timestamp() - timedelta(days=1)
+            futuro = pd.date_range(start=inicio, end=fim, freq='D')
             df_futuro = pd.DataFrame({'ds': futuro})
             previsao = modelo.predict(df_futuro)
             df_prev = previsao[['ds', 'yhat']].rename(columns={'yhat': 'y'})
             df_prev['y'] = df_prev['y'].clip(lower=0)
             df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
-            df_prev['dia_semana_pt'] = df_prev['dia_semana'].map({
-                'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
-                'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-            })
+            df_prev['dia_semana_pt'] = df_prev['dia_semana'].map(mapa_dias).fillna(df_prev['dia_semana'])
             curva_proj = calcular_curva(df_prev, dias_selecionados, sufixo=" (Projetado)")
         else:
             curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetado)")
@@ -176,7 +156,6 @@ if uploaded_file:
         df_temp = curva_comparativa.reset_index()
         df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
         df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
-
         cor_azul_escuro = '#90caf9' if dark_mode else '#002f6c'
         cor_azul_claro = '#bbdefb' if dark_mode else '#0059b3'
         fundo_grafico = '#121212' if dark_mode else 'white'
@@ -206,7 +185,7 @@ if uploaded_file:
                 st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
                 st.altair_chart(chart_dia, use_container_width=True)
 
-        # Exportação Excel
+        # Exportar para Excel
         st.subheader("📥 Exportar Resultado")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
