@@ -9,20 +9,19 @@ import altair as alt
 # Configurar página
 st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide", initial_sidebar_state="expanded")
 
-# --- Sidebar Imagem e título ---
+# Sidebar imagem e título
 st.sidebar.image(
     "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
     use_container_width=True
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-# --- Dark Mode ---
+# Dark Mode
 dark_mode = st.sidebar.checkbox("🌙 Modo Escuro", value=False)
 
-# --- CSS personalizado ---
+# CSS personalizado para modo claro e escuro
 css_style = """
 <style>
-/* Ajusta cores do app e sidebar */
 .block-container {background-color: %s; color: %s;}
 .stApp {background-color: %s; color: %s;}
 label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect label, .stTextArea label, .stDateInput label, .stFileUploader label {
@@ -39,38 +38,40 @@ label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect l
     font-weight: 600 !important;
     border-radius: 6px !important;
 }
-/* Sidebar personalizado */
+/* Sidebar padrão sem cor roxa, só fundo branco/preto e texto */
 [data-testid="stSidebar"] {
-    background-color: #6600cc !important;
-    color: white !important;
+    background-color: %s !important;
+    color: %s !important;
 }
 [data-testid="stSidebar"] * {
-    color: white !important;
+    color: %s !important;
 }
 </style>
 """ % (
-    "#121212" if dark_mode else "white",   # .block-container background
-    "#e0e0e0" if dark_mode else "black",   # .block-container color
-    "#121212" if dark_mode else "white",   # .stApp background
-    "#e0e0e0" if dark_mode else "black",   # .stApp color
-    "#e0e0e0" if dark_mode else "black",   # labels, markdown color
-    "#1e1e1e" if dark_mode else "white",   # inputs background
-    "#e0e0e0" if dark_mode else "black",   # inputs color
-    "#444" if dark_mode else "#ccc",       # inputs border color
+    "#121212" if dark_mode else "white",  # block-container background
+    "#e0e0e0" if dark_mode else "black",  # block-container color
+    "#121212" if dark_mode else "white",  # stApp background
+    "#e0e0e0" if dark_mode else "black",  # stApp color
+    "#e0e0e0" if dark_mode else "black",  # label, markdown color
+    "#1e1e1e" if dark_mode else "white",  # input background
+    "#e0e0e0" if dark_mode else "black",  # input color
+    "#444" if dark_mode else "#ccc",      # input border
+    "#121212" if dark_mode else "white",  # sidebar background
+    "#e0e0e0" if dark_mode else "black",  # sidebar text color
+    "#e0e0e0" if dark_mode else "black",  # sidebar text color (all children)
 )
 
 st.markdown(css_style, unsafe_allow_html=True)
 
-# --- Upload ---
+# Upload
 st.sidebar.markdown("### 📁 Upload da Planilha")
 uploaded_file = st.sidebar.file_uploader("Envie arquivo com colunas 'Data' e 'Quantidade de Ligações'", type=[".xlsx", ".xls", ".csv"])
 
-# --- Dias da semana ---
+# Dias da semana
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
 
 if uploaded_file:
-    # Leitura e limpeza
     df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip()
     if 'Data' not in df.columns or 'Quantidade de Ligações' not in df.columns:
@@ -87,18 +88,15 @@ if uploaded_file:
     }
     df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias).fillna(df['dia_semana'])
 
-    # --- Mês atual e próximos 3 meses para seleção automática ---
+    # Mês atual e próximos 3 meses
     mes_hoje = pd.Period(datetime.now(), freq='M')
-    meses_proximos = [mes_hoje + i for i in range(4)]  # mês atual + 3 meses
+    meses_proximos = [mes_hoje + i for i in range(4)]
 
-    # Meses históricos disponíveis
     meses_disponiveis = sorted(df['ano_mes'].unique())
     meses_disponiveis_str = [str(m) for m in meses_disponiveis]
 
-    # Mês base (histórico) - seleciona último mês disponível
     ultimo_mes_hist = meses_disponiveis[-1]
 
-    # Selecionar o mês base no sidebar com default no último mês histórico
     mes_base = st.sidebar.selectbox(
         "📅 Mês base (histórico)",
         options=[str(m) for m in meses_disponiveis],
@@ -106,26 +104,21 @@ if uploaded_file:
     )
     mes_base = pd.Period(mes_base, freq='M')
 
-    # Meses projetados: os meses futuros (meses_hoje + 3 meses) que ainda não estão no histórico
     meses_para_projetar = [m for m in meses_proximos if m not in meses_disponiveis]
-
-    # Converter para str para multiselect
     meses_para_projetar_str = [str(m) for m in meses_para_projetar]
 
     meses_proj_str = st.sidebar.multiselect(
         "🌟 Meses projetados (futuros até +3 meses)",
         options=meses_para_projetar_str,
-        default=meses_para_projetar_str  # já seleciona todos por padrão
+        default=meses_para_projetar_str
     )
     meses_proj = [pd.Period(m, freq='M') for m in meses_proj_str]
 
-    # Função para calcular ocorrência da semana no mês
     def ocorrencia_semana(data):
         dia_semana = data.weekday()
         dias_mes = pd.date_range(start=data.replace(day=1), end=data)
         return sum(d.weekday() == dia_semana for d in dias_mes)
 
-    # Função para calcular curva percentual por dia da semana + ordem da semana
     def calcular_curva(df_mes, dias_filtrados, sufixo=""):
         df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
         if df_mes.empty:
@@ -148,7 +141,6 @@ if uploaded_file:
     for mes_proj in meses_proj:
         df_proj = df[df['ano_mes'] == mes_proj]
         if df_proj.empty:
-            # Projeção com Prophet para o mês futuro
             Q1, Q3 = df['y'].quantile([0.25, 0.75])
             IQR = Q3 - Q1
             df_limpo = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].sort_values('ds')
@@ -204,10 +196,10 @@ if uploaded_file:
             for mes_str, dados in resultados.items():
                 comp = dados['comparativo'].reset_index()
                 comp.to_excel(writer, sheet_name=f"Comparativo_{mes_str}", index=False)
-            writer.save()
-            st.download_button(
-                label="📥 Baixar resultados em Excel",
-                data=buffer.getvalue(),
-                file_name="resultados_previsao_ligacoes.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+
+        st.download_button(
+            label="📥 Baixar resultados em Excel",
+            data=buffer.getvalue(),
+            file_name="resultados_previsao_ligacoes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
