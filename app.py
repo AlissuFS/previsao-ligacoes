@@ -7,19 +7,22 @@ from prophet import Prophet
 import altair as alt
 
 # Configurar página
-st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide")
+st.set_page_config(page_title="SERCOM Digitais - Projeção de Ligações", layout="wide", initial_sidebar_state="expanded")
+
+# Sidebar
+st.sidebar.image("https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif", use_column_width=True)
+st.sidebar.markdown("### 🔍 Configurações")
 
 # Dark Mode
-dark_mode = st.sidebar.checkbox("🌓 Ativar Dark Mode", value=False)
+dark_mode = st.sidebar.checkbox("🌙 Modo Escuro", value=False)
 
-# CSS para Dark/Light Mode
+# CSS personalizado
 if dark_mode:
     css_style = """
     <style>
-    .block-container { padding-top: 2rem; background-color: #121212; color: #e0e0e0; }
+    .block-container { background-color: #121212; color: #e0e0e0; }
     .stApp { background-color: #121212; color: #e0e0e0; }
-    label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect label,
-    .stTextArea label, .stDateInput label, .stFileUploader label {
+    label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect label, .stTextArea label, .stDateInput label, .stFileUploader label {
         color: #e0e0e0 !important;
     }
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb], .stMultiselect div[data-baseweb] {
@@ -39,7 +42,7 @@ if dark_mode:
 else:
     css_style = """
     <style>
-    .block-container { padding-top: 2rem; background-color: white; color: black; }
+    .block-container { background-color: white; color: black; }
     .stApp { background-color: white; color: black; }
     label, .stMarkdown { color: black !important; }
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb], .stMultiselect div[data-baseweb] {
@@ -57,75 +60,67 @@ else:
     """
 st.markdown(css_style, unsafe_allow_html=True)
 
-# Logo
-logo_url = "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif"
-st.markdown(f"""
-    <div style="background-color:#002f6c; padding:12px 24px; display:flex; align-items:center; border-bottom: 3px solid #0059b3;">
-        <img src="{logo_url}" style="height:42px; margin-right:20px;" alt="Logo SERCOM">
-        <h1 style="color:#ffffff; font-size:1.6rem; margin:0;">SERCOM Digitais - Projeção de Ligações</h1>
-    </div>
-""", unsafe_allow_html=True)
-
-# Upload
-uploaded_file = st.file_uploader("📁 Envie a planilha com 'Data' e 'Quantidade de Ligações'", type=[".xlsx", ".xls", ".csv"])
+# Entrada de dados
+st.sidebar.markdown("### 📁 Upload da Planilha")
+uploaded_file = st.sidebar.file_uploader("Envie arquivo com colunas 'Data' e 'Quantidade de Ligações'", type=[".xlsx", ".xls", ".csv"])
 
 # Dias da semana
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
-dias_selecionados = st.multiselect("📌 Selecione os dias da semana a considerar", dias_semana_port, default=dias_semana_port)
+dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
 
 if uploaded_file:
-    try:
-        df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(uploaded_file)
-        df.columns = df.columns.str.strip()
-        if 'Data' not in df.columns or 'Quantidade de Ligações' not in df.columns:
-            st.error("A planilha precisa conter as colunas 'Data' e 'Quantidade de Ligações'.")
-            st.stop()
+    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(uploaded_file)
+    df.columns = df.columns.str.strip()
+    if 'Data' not in df.columns or 'Quantidade de Ligações' not in df.columns:
+        st.error("A planilha precisa conter as colunas 'Data' e 'Quantidade de Ligações'.")
+        st.stop()
 
-        df['ds'] = pd.to_datetime(df['Data'])
-        df['y'] = df['Quantidade de Ligações'].clip(lower=0)
-        df['ano_mes'] = df['ds'].dt.to_period('M')
-        df['dia_semana'] = df['ds'].dt.day_name()
-        mapa_dias = {
-            'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
-            'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-        }
-        df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias)
-        df['dia_semana_pt'] = df['dia_semana_pt'].fillna(df['dia_semana'])
+    df['ds'] = pd.to_datetime(df['Data'])
+    df['y'] = df['Quantidade de Ligações'].clip(lower=0)
+    df['ano_mes'] = df['ds'].dt.to_period('M')
+    df['dia_semana'] = df['ds'].dt.day_name()
+    mapa_dias = {
+        'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
+        'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+    }
+    df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias).fillna(df['dia_semana'])
 
-        # Seleção de meses
-        meses_disponiveis = sorted(df['ano_mes'].unique(), reverse=True)
-        mes_map = {str(m): m for m in meses_disponiveis}
-        col1, col2 = st.columns(2)
-        with col1:
-            mes_base_str = st.selectbox("📅 Mês base (Histórico)", list(mes_map.keys()), index=0)
-        with col2:
-            mes_proj_str = st.text_input("🔮 Mês projetado (AAAA-MM)", value=str((datetime.now() + timedelta(days=30)).strftime('%Y-%m')))
-        mes_base = mes_map[mes_base_str]
-        mes_proj = pd.Period(mes_proj_str, freq='M')
+    # Sidebar: Mês base e meses projetados
+    meses_disponiveis = sorted(df['ano_mes'].unique(), reverse=True)
+    mes_map = {str(m): m for m in meses_disponiveis}
+    mes_base_str = st.sidebar.selectbox("📅 Mês base (histórico)", list(mes_map.keys()), index=0)
+    meses_proj_str = st.sidebar.multiselect("🌟 Meses projetados (AAAA-MM)", [])
 
-        def ocorrencia_semana(data):
-            dia_semana = data.weekday()
-            dias_mes = pd.date_range(start=data.replace(day=1), end=data)
-            return sum(d.weekday() == dia_semana for d in dias_mes)
+    mes_base = mes_map[mes_base_str]
+    meses_proj = [pd.Period(m, freq='M') for m in meses_proj_str if m]
 
-        def calcular_curva(df_mes, dias_filtrados, sufixo=""):
-            df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
-            if df_mes.empty:
-                return pd.Series(dtype=float)
-            df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
-            ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
-            df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
-            grupo = df_mes.groupby('rotulo')['y'].sum()
-            grupo_total = grupo.sum()
-            percentual = grupo / grupo_total * 100
-            percentual.name = f"Percentual{sufixo}"
-            return percentual
+    def ocorrencia_semana(data):
+        dia_semana = data.weekday()
+        dias_mes = pd.date_range(start=data.replace(day=1), end=data)
+        return sum(d.weekday() == dia_semana for d in dias_mes)
 
-        curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, sufixo=" (Histórico)")
+    def calcular_curva(df_mes, dias_filtrados, sufixo=""):
+        df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
+        if df_mes.empty:
+            return pd.Series(dtype=float)
+        df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
+        ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
+        df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
+        grupo = df_mes.groupby('rotulo')['y'].sum()
+        grupo_total = grupo.sum()
+        percentual = grupo / grupo_total * 100
+        percentual.name = f"Percentual{sufixo}"
+        return percentual
+
+    curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, sufixo=" (Histórico)")
+
+    tabs = st.tabs(["📊 Comparativos", "📅 Curvas Diárias", "📥 Exportação"])
+
+    resultados = {}
+
+    for mes_proj in meses_proj:
         df_proj = df[df['ano_mes'] == mes_proj]
-
         if df_proj.empty:
-            st.info("📈 Gerando previsão com IA para o mês projetado...")
             Q1, Q3 = df['y'].quantile([0.25, 0.75])
             IQR = Q3 - Q1
             df_limpo = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].sort_values('ds')
@@ -139,65 +134,52 @@ if uploaded_file:
             df_prev['y'] = df_prev['y'].clip(lower=0)
             df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
             df_prev['dia_semana_pt'] = df_prev['dia_semana'].map(mapa_dias).fillna(df_prev['dia_semana'])
-            curva_proj = calcular_curva(df_prev, dias_selecionados, sufixo=" (Projetado)")
+            dados_proj = df_prev
         else:
-            curva_proj = calcular_curva(df_proj, dias_selecionados, sufixo=" (Projetado)")
+            dados_proj = df_proj
 
-        curva_comparativa = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
-        curva_fmt = curva_comparativa.copy()
-        curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
-        curva_fmt['Projetado (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
-        curva_fmt = curva_fmt[['Histórico (%)', 'Projetado (%)']]
+        curva_proj = calcular_curva(dados_proj, dias_selecionados, sufixo=f" ({mes_proj})")
+        comparativo = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
 
-        st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_proj.strftime('%m/%Y')}")
-        st.dataframe(curva_fmt, use_container_width=True)
+        resultados[str(mes_proj)] = {
+            "dados": dados_proj,
+            "curva": curva_proj,
+            "comparativo": comparativo
+        }
 
-        # Gráfico comparativo
-        df_temp = curva_comparativa.reset_index()
-        df_temp.rename(columns={df_temp.columns[0]: 'Categoria'}, inplace=True)
-        df_plot = df_temp.melt(id_vars='Categoria', var_name='Tipo', value_name='Percentual')
-        cor_azul_escuro = '#90caf9' if dark_mode else '#002f6c'
-        cor_azul_claro = '#bbdefb' if dark_mode else '#0059b3'
-        fundo_grafico = '#121212' if dark_mode else 'white'
+    with tabs[0]:
+        for mes_str, dados in resultados.items():
+            st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_str}")
+            curva_fmt = dados['comparativo'].copy()
+            curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+            curva_fmt[f'{mes_str} (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+            st.dataframe(curva_fmt[["Histórico (%)", f"{mes_str} (%)"]], use_container_width=True)
 
-        chart_comp = alt.Chart(df_plot).mark_line(point=True).encode(
-            x=alt.X('Categoria:N', title='Ordem e Dia da Semana', sort=None),
-            y=alt.Y('Percentual:Q', title='Percentual (%)'),
-            color=alt.Color('Tipo:N', scale=alt.Scale(domain=list(df_plot['Tipo'].unique()), range=[cor_azul_escuro, cor_azul_claro])),
-            tooltip=['Categoria', 'Tipo', alt.Tooltip('Percentual', format='.2f')]
-        ).properties(width=800, height=350, background=fundo_grafico).interactive()
-
-        st.subheader("📈 Evolução em Gráfico de Linha")
-        st.altair_chart(chart_comp, use_container_width=True)
-
-        # Gráfico diário
-        df_mes_proj = df_proj if not df_proj.empty else df_prev
-        if df_mes_proj is not None:
+    with tabs[1]:
+        for mes_str, dados in resultados.items():
+            st.subheader(f"📅 Curva Diária da Projeção: {mes_str}")
+            df_mes_proj = dados['dados']
             total_mes = df_mes_proj['y'].sum()
             if total_mes > 0:
                 df_dia = df_mes_proj[['ds', 'y']].copy()
                 df_dia['percentual'] = df_dia['y'] / total_mes * 100
-                chart_dia = alt.Chart(df_dia).mark_line(point=True, color=cor_azul_escuro).encode(
+                chart_dia = alt.Chart(df_dia).mark_line(point=True).encode(
                     x=alt.X('ds:T', title='Data'),
                     y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
                     tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
-                ).properties(width=800, height=350, background=fundo_grafico).interactive()
-                st.subheader(f"📅 Curva diária da projeção para {mes_proj.strftime('%m/%Y')}")
+                ).properties(width=800, height=350).interactive()
                 st.altair_chart(chart_dia, use_container_width=True)
 
-        # Exportar para Excel
-        st.subheader("📥 Exportar Resultado")
+    with tabs[2]:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            curva_comparativa.reset_index().to_excel(writer, index=False, sheet_name="Comparativo")
-            if df_mes_proj is not None:
-                df_export = df_mes_proj[['ds', 'y']].copy()
+            for mes_str, dados in resultados.items():
+                comp = dados['comparativo'].reset_index()
+                comp.to_excel(writer, index=False, sheet_name=f"Comparativo_{mes_str}")
+                df_export = dados['dados'][['ds', 'y']].copy()
                 total_proj = df_export['y'].sum()
                 df_export['Percentual (%)'] = df_export['y'] / total_proj * 100
                 df_export['Percentual (%)'] = df_export['Percentual (%)'].round(2)
                 df_export.columns = ['Data', 'Quantidade', 'Percentual (%)']
-                df_export.to_excel(writer, index=False, sheet_name="Curva Diária Projeção")
-        st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="comparativo_projecao_ligacoes_SERCOM.xlsx")
-
-    except Exception as e:
-        st.error(f"Erro ao processar: {e}")
+                df_export.to_excel(writer, index=False, sheet_name=f"Curva_{mes_str}")
+        st.download_button("📄 Baixar Excel", data=buffer.getvalue(), file_name="projecoes_SERCOM.xlsx")
