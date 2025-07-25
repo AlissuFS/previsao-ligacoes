@@ -15,14 +15,14 @@ st.markdown("""
         background-color: #4b0081;
     }
     [data-testid="stSidebar"] * {
-        color: transparent !important;
+        color: white !important;
     }
 
     [data-testid="stSidebar"] .stSelectbox > div > div,
     [data-testid="stSidebar"] .stMultiSelect > div > div,
     [data-testid="stSidebar"] .stDateInput > div > div {
         background: #4b0081 !important;
-        color: white !important;
+        color: transparent !important;
         border: 1px solid white !important;
         border-radius: 10px !important;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
