@@ -22,6 +22,20 @@ uploaded_file = st.sidebar.file_uploader("Envie arquivo com colunas 'Data', 'Qua
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
 
+def remove_outliers_por_grupo(df, grupo_col, valor_col):
+    dfs_limpos = []
+    for grupo in df[grupo_col].unique():
+        df_grupo = df[df[grupo_col] == grupo].copy()
+        if len(df_grupo) == 0:
+            continue
+        Q1, Q3 = df_grupo[valor_col].quantile([0.25, 0.75])
+        IQR = Q3 - Q1
+        lim_inferior = Q1 - 1.5 * IQR
+        lim_superior = Q3 + 1.5 * IQR
+        df_grupo_limpo = df_grupo[(df_grupo[valor_col] >= lim_inferior) & (df_grupo[valor_col] <= lim_superior)]
+        dfs_limpos.append(df_grupo_limpo)
+    return pd.concat(dfs_limpos) if dfs_limpos else pd.DataFrame(columns=df.columns)
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip()
@@ -87,19 +101,21 @@ if uploaded_file:
     coluna_analise = 'tma' if tipo_curva == "TMA" else 'y'
     curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, coluna_analise, sufixo=" (Histórico)")
 
+    # Limpar outliers separadamente para volume
+    df_limpo_volume = remove_outliers_por_grupo(df, 'dia_semana_pt', 'y')
+    df_limpo_volume = df_limpo_volume[['ds', 'y']].copy()
+
+    # Limpar outliers separadamente para TMA
+    df_limpo_tma = remove_outliers_por_grupo(df, 'dia_semana_pt', 'tma')
+    df_tma = df_limpo_tma.rename(columns={'tma': 'y'})[['ds', 'y']].copy()
+
     # Treinar modelos Prophet
-
-    # Limpar outliers para volume
-    Q1, Q3 = df['y'].quantile([0.25, 0.75])
-    IQR = Q3 - Q1
-    df_limpo_volume = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].copy()
-
-    modelo_volume = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
+    modelo_volume = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
+    modelo_volume.add_seasonality(name='monthly', period=30.5, fourier_order=5)
     modelo_volume.fit(df_limpo_volume)
 
-    df_tma = df[['ds', 'tma']].copy()
-    df_tma = df_tma.rename(columns={'tma': 'y'})
-    modelo_tma = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
+    modelo_tma = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
+    modelo_tma.add_seasonality(name='monthly', period=30.5, fourier_order=5)
     modelo_tma.fit(df_tma)
 
     resultados = {}
@@ -110,8 +126,8 @@ if uploaded_file:
         if df_proj.empty:
             start_date = mes_proj.to_timestamp()
             end_date = (mes_proj + 1).to_timestamp() - timedelta(days=1)
-            futuro = pd.date_range(start=start_date, end=end_date)
-            df_futuro = pd.DataFrame({'ds': futuro.to_list()})  # corrigido aqui!
+            futuro = pd.date_range(start=start_date, end=end_date, freq='D')
+            df_futuro = pd.DataFrame({'ds': futuro.to_list()})
 
             previsao_volume = modelo_volume.predict(df_futuro)
             previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
@@ -120,7 +136,7 @@ if uploaded_file:
             previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
 
             df_prev = pd.DataFrame({
-                'ds': df_futuro['ds'],  # já é lista, sem erro
+                'ds': df_futuro['ds'],
                 'y': previsao_volume['y'],
                 'tma': previsao_tma['tma']
             })
@@ -182,10 +198,8 @@ if uploaded_file:
                 st.altair_chart(chart_dia, use_container_width=True)
 
     with tabs[2]:
-        # Exportação unificada
         dfs_export = []
-
-        meses_todos = [mes_base] + meses_proj  # incluir mês base
+        meses_todos = [mes_base] + meses_proj
 
         for mes in meses_todos:
             df_mes = df[df['ano_mes'] == mes].copy() if mes in meses_disponiveis else pd.DataFrame()
@@ -193,7 +207,7 @@ if uploaded_file:
             if df_mes.empty:
                 start_date = mes.to_timestamp()
                 end_date = (mes + 1).to_timestamp() - timedelta(days=1)
-                futuro = pd.date_range(start=start_date, end=end_date)
+                futuro = pd.date_range(start=start_date, end=end_date, freq='D')
                 df_futuro = pd.DataFrame({'ds': futuro.to_list()})
 
                 previsao_volume = modelo_volume.predict(df_futuro)
