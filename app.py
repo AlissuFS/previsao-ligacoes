@@ -8,70 +8,36 @@ import altair as alt
 
 st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", initial_sidebar_state="expanded")
 
-# CSS com correções visuais completas
+# CSS personalizado para a barra lateral
 st.markdown("""
     <style>
-    [data-testid="stSidebar"] {
-        background-color: #4b0081;
-    }
-    [data-testid="stSidebar"] * {
-        color: white !important;
-    }
-
-    [data-testid="stSidebar"] .stSelectbox > div > div,
-    [data-testid="stSidebar"] .stMultiSelect > div > div,
-    [data-testid="stSidebar"] .stDateInput > div > div,
-    [data-testid="stSidebar"] .stFileUploader > div:first-child {
-        background: #4b0081 !important;
-        color: white !important;
-        border: 1px solid white !important;
-        border-radius: 10px !important;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        padding: 6px;
-    }
-
-    [data-testid="stSidebar"] .stFileUploader label {
-        color: white !important;
-    }
-
-    [data-testid="stFileUploadDropzone"] {
-        border: 2px dashed white !important;
-        border-radius: 10px !important;
-        background-color: #4b0081 !important;
-    }
-
-    [data-testid="stFileUploadDropzone"] > div {
-        color: white !important;
-    }
-
-    [data-testid="stFileUploadDropzone"] button {
-        background-color: #9032bb !important;
-        color: white !important;
-        border-radius: 8px !important;
-        border: none !important;
-        box-shadow: 1px 1px 4px rgba(0,0,0,0.2);
-    }
-
-    [data-testid="stFileUploadDropzone"] button:hover {
-        background-color: #a84be0 !important;
-    }
-
-    [data-testid="stSidebar"] .stMultiSelect .css-12jo7m5 {
-        background-color: #9032bb !important;
-        color: white !important;
-    }
-
-    .stButton button {
-        background-color: #9032bb;
-        color: white;
-        border: none;
-        border-radius: 10px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-    }
-    .stButton button:hover {
-        background-color: #a84be0;
-    }
-    </style>
+[data-testid="stSidebar"] {
+    background-color: #4b0081;
+}
+[data-testid="stSidebar"] * {
+    color: white !important;
+}
+[data-testid="stSidebar"] .stSelectbox > div > div,
+[data-testid="stSidebar"] .stMultiSelect > div > div,
+[data-testid="stSidebar"] .stDateInput > div > div,
+[data-testid="stSidebar"] .stFileUploader > div > div {
+    background: #4b0081 !important;
+    color: white !important;
+    border: 1px solid white !important;
+}
+[data-testid="stSidebar"] .stMultiSelect .css-12jo7m5 {
+    background-color: #9032bb !important;
+    color: white !important;
+}
+.stButton button {
+    background-color: #9032bb;
+    color: white;
+    border: none;
+}
+.stButton button:hover {
+    background-color: #a84be0;
+}
+</style>
 """, unsafe_allow_html=True)
 
 st.sidebar.image(
@@ -183,7 +149,7 @@ if uploaded_file:
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
 
-    # Gráficos
+    # Gráficos com cores personalizadas
     st.markdown("### 📊 Gráficos de Comparação")
 
     df_chart = df_prev.copy()
