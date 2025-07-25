@@ -26,7 +26,7 @@ def ocorrencia_semana(data):
     return sum(d.weekday() == dia_semana for d in dias_mes)
 
 # Função para remover outliers por dia da semana e ordem de ocorrência
-# Com exceção: domingo mantém todos os valores
+# Para domingo calcula a média simples por ocorrência (ordem)
 def remover_outliers_detalhado(df, valor_col):
     df = df.copy()
     df['ordem'] = df['ds'].apply(ocorrencia_semana)
@@ -34,9 +34,16 @@ def remover_outliers_detalhado(df, valor_col):
     df_filtrado = []
 
     for (dia, ordem), grupo in grupos:
-        # Mantém todos os valores para domingo, sem remover outliers
         if dia == 'Domingo':
-            df_filtrado.append(grupo)
+            # Média simples para domingo na ocorrência (ordem)
+            media_valor = grupo[valor_col].mean()
+            data_referencia = grupo['ds'].iloc[0]
+            df_filtrado.append(pd.DataFrame({
+                'ds': [data_referencia],
+                valor_col: [media_valor],
+                'dia_semana_pt': [dia],
+                'ordem': [ordem]
+            }))
             continue
 
         if len(grupo) < 3:
