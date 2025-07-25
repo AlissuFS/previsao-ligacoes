@@ -111,7 +111,7 @@ if uploaded_file:
             start_date = mes_proj.to_timestamp()
             end_date = (mes_proj + 1).to_timestamp() - timedelta(days=1)
             futuro = pd.date_range(start=start_date, end=end_date)
-            df_futuro = pd.DataFrame({'ds': futuro})
+            df_futuro = pd.DataFrame({'ds': futuro.to_list()})  # corrigido aqui!
 
             previsao_volume = modelo_volume.predict(df_futuro)
             previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
@@ -120,7 +120,7 @@ if uploaded_file:
             previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
 
             df_prev = pd.DataFrame({
-                'ds': df_futuro,
+                'ds': df_futuro['ds'],  # já é lista, sem erro
                 'y': previsao_volume['y'],
                 'tma': previsao_tma['tma']
             })
@@ -194,7 +194,7 @@ if uploaded_file:
                 start_date = mes.to_timestamp()
                 end_date = (mes + 1).to_timestamp() - timedelta(days=1)
                 futuro = pd.date_range(start=start_date, end=end_date)
-                df_futuro = pd.DataFrame({'ds': futuro})
+                df_futuro = pd.DataFrame({'ds': futuro.to_list()})
 
                 previsao_volume = modelo_volume.predict(df_futuro)
                 previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
@@ -203,7 +203,7 @@ if uploaded_file:
                 previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
 
                 df_mes = pd.DataFrame({
-                    'ds': df_futuro,
+                    'ds': df_futuro['ds'],
                     'y': previsao_volume['y'],
                     'tma': previsao_tma['tma']
                 })
