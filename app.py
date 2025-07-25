@@ -25,32 +25,23 @@ def ocorrencia_semana(data):
     dias_mes = pd.date_range(start=data.replace(day=1), end=data)
     return sum(d.weekday() == dia_semana for d in dias_mes)
 
-# Função para definir grupo do dia da semana
-def definir_grupo(dia):
-    if dia in ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira']:
-        return 'Grupo 1 - Dias Úteis'
-    elif dia == 'Sábado':
-        return 'Grupo 2 - Sábado'
-    else:
-        return 'Grupo 3 - Domingo'
-
-# Função para remover outliers por grupo de dias e ordem de ocorrência
+# Função para remover outliers por dia da semana e ordem de ocorrência
 def remover_outliers_detalhado(df, valor_col):
     df = df.copy()
     df['ordem'] = df['ds'].apply(ocorrencia_semana)
-    grupos = df.groupby(['grupo_dia', 'ordem'])
+    grupos = df.groupby(['dia_semana_pt', 'ordem'])
     df_filtrado = []
 
-    for (grupo, ordem), grupo_df in grupos:
-        if len(grupo_df) < 3:
-            df_filtrado.append(grupo_df)
+    for (dia, ordem), grupo in grupos:
+        if len(grupo) < 3:
+            df_filtrado.append(grupo)
             continue
-        Q1 = grupo_df[valor_col].quantile(0.25)
-        Q3 = grupo_df[valor_col].quantile(0.75)
+        Q1 = grupo[valor_col].quantile(0.25)
+        Q3 = grupo[valor_col].quantile(0.75)
         IQR = Q3 - Q1
         lim_inf = Q1 - 1.5 * IQR
         lim_sup = Q3 + 1.5 * IQR
-        grupo_filtrado = grupo_df[(grupo_df[valor_col] >= lim_inf) & (grupo_df[valor_col] <= lim_sup)]
+        grupo_filtrado = grupo[(grupo[valor_col] >= lim_inf) & (grupo[valor_col] <= lim_sup)]
         df_filtrado.append(grupo_filtrado)
 
     return pd.concat(df_filtrado).sort_values('ds')
@@ -77,9 +68,7 @@ if uploaded_file:
         'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
     }
     df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias)
-
-    # Criar coluna grupo_dia para agrupar dias da semana conforme solicitado
-    df['grupo_dia'] = df['dia_semana_pt'].apply(definir_grupo)
+    df['ordem'] = df['ds'].apply(ocorrencia_semana)
 
     df_limpo_volume = remover_outliers_detalhado(df, 'y')
     df_limpo_volume = df_limpo_volume[['ds', 'y']].drop_duplicates(subset=['ds']).reset_index(drop=True)
