@@ -15,8 +15,6 @@ st.sidebar.image(
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-# Removido dark_mode e CSS customizado
-
 # Upload
 st.sidebar.markdown("### 📁 Upload da Planilha")
 uploaded_file = st.sidebar.file_uploader("Envie arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
@@ -89,7 +87,9 @@ if uploaded_file:
     coluna_analise = 'tma' if tipo_curva == "TMA" else 'y'
     curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, coluna_analise, sufixo=" (Histórico)")
 
-    # Modelos Prophet separados para volume e TMA
+    # Preparar e treinar modelos Prophet
+
+    # Limpar outliers para volume
     Q1, Q3 = df['y'].quantile([0.25, 0.75])
     IQR = Q3 - Q1
     df_limpo_volume = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].copy()
@@ -98,6 +98,7 @@ if uploaded_file:
     modelo_volume.fit(df_limpo_volume)
 
     df_tma = df[['ds', 'tma']].copy()
+    df_tma = df_tma.rename(columns={'tma': 'y'})
     modelo_tma = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
     modelo_tma.fit(df_tma)
 
