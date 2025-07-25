@@ -8,45 +8,88 @@ import altair as alt
 
 st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", initial_sidebar_state="expanded")
 
-# CSS personalizado para a barra lateral
+# CSS com estilo corrigido (upload sem quadrado e botão personalizado)
 st.markdown("""
     <style>
-[data-testid="stSidebar"] {
-    background-color: #4b0081;
-}
-[data-testid="stSidebar"] * {
-    color: white !important;
-}
-[data-testid="stSidebar"] .stSelectbox > div > div,
-[data-testid="stSidebar"] .stMultiSelect > div > div,
-[data-testid="stSidebar"] .stDateInput > div > div,
-[data-testid="stSidebar"] .stFileUploader > div > div {
-    background: #4b0081 !important;
-    color: white !important;
-    border: 1px solid white !important;
-}
-[data-testid="stSidebar"] .stMultiSelect .css-12jo7m5 {
-    background-color: #9032bb !important;
-    color: white !important;
-}
-.stButton button {
-    background-color: #9032bb;
-    color: white;
-    border: none;
-}
-.stButton button:hover {
-    background-color: #a84be0;
-}
-</style>
+    [data-testid="stSidebar"] {
+        background-color: #4b0081;
+    }
+    [data-testid="stSidebar"] * {
+        color: white !important;
+    }
+
+    [data-testid="stSidebar"] .stSelectbox > div > div,
+    [data-testid="stSidebar"] .stMultiSelect > div > div,
+    [data-testid="stSidebar"] .stDateInput > div > div {
+        background: #4b0081 !important;
+        color: white !important;
+        border: 1px solid white !important;
+        border-radius: 10px !important;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        padding: 6px;
+    }
+
+    /* Remove o fundo e borda do uploader */
+    [data-testid="stSidebar"] .stFileUploader > div:first-child {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    [data-testid="stFileUploadDropzone"] {
+        background-color: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    [data-testid="stFileUploadDropzone"] > div {
+        display: none !important; /* Oculta texto padrão interno */
+    }
+
+    /* Estilo do botão do uploader */
+    [data-testid="stFileUploadDropzone"] button {
+        background-color: #9032bb !important;
+        color: white !important;
+        border-radius: 10px !important;
+        border: none !important;
+        padding: 10px 20px !important;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        font-weight: 600;
+    }
+
+    [data-testid="stFileUploadDropzone"] button:hover {
+        background-color: #a84be0 !important;
+    }
+
+    [data-testid="stSidebar"] .stMultiSelect .css-12jo7m5 {
+        background-color: #9032bb !important;
+        color: white !important;
+    }
+
+    .stButton button {
+        background-color: #9032bb;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    }
+    .stButton button:hover {
+        background-color: #a84be0;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
+# Logo e menu lateral
 st.sidebar.image(
     "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
     use_container_width=True
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-uploaded_file = st.sidebar.file_uploader("📁 Upload: Arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
+# Upload com botão personalizado
+uploaded_file = st.sidebar.file_uploader("📂 Selecionar arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
 
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
@@ -149,7 +192,7 @@ if uploaded_file:
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
 
-    # Gráficos com cores personalizadas
+    # Gráficos
     st.markdown("### 📊 Gráficos de Comparação")
 
     df_chart = df_prev.copy()
