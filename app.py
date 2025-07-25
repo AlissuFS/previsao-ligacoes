@@ -83,6 +83,7 @@ if uploaded_file:
     df_futuro = pd.DataFrame({'ds': dias_futuros})
 
     previsao_volume = modelo_volume.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'y'})
+    previsao_volume['y'] = previsao_volume['y'].clip(lower=0)
     previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
 
     df_prev = pd.merge(previsao_volume, previsao_tma, on='ds')
@@ -92,12 +93,42 @@ if uploaded_file:
 
     df_prev_formatado = df_prev[['ds', 'y', 'percentual_volume', 'tma', 'percentual_tma']].copy()
     df_prev_formatado.columns = ['Data', 'Volume projetado', '% curva volume', 'TMA projetado (s)', '% curva TMA']
-    df_prev_formatado['Data'] = df_prev_formatado['Data'].dt.strftime('%d/%m/%Y')
+    df_prev_formatado['Data'] = pd.to_datetime(df_prev_formatado['Data']).dt.strftime('%d/%m/%Y')
     df_prev_formatado['% curva volume'] = df_prev_formatado['% curva volume'].map("{:.2f}%".format)
     df_prev_formatado['% curva TMA'] = df_prev_formatado['% curva TMA'].map("{:.2f}%".format)
 
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
+
+    # Gráficos comparativos
+    st.markdown("### 📊 Gráficos de Comparação")
+
+    df_chart = df_prev.copy()
+    df_chart['percentual_volume'] = df_chart['percentual_volume'].round(2)
+    df_chart['percentual_tma'] = df_chart['percentual_tma'].round(2)
+
+    chart_volume = alt.Chart(df_chart).mark_line(point=True).encode(
+        x=alt.X('ds:T', title='Data'),
+        y=alt.Y('percentual_volume:Q', title='% Volume'),
+        tooltip=[
+            alt.Tooltip('ds:T', title='Data'),
+            alt.Tooltip('y:Q', title='Volume'),
+            alt.Tooltip('percentual_volume:Q', title='% Volume', format='.2f')
+        ]
+    ).properties(title='Curva de Volume Projetado', width=800, height=300)
+
+    chart_tma = alt.Chart(df_chart).mark_line(point=True, color='orange').encode(
+        x=alt.X('ds:T', title='Data'),
+        y=alt.Y('percentual_tma:Q', title='% TMA'),
+        tooltip=[
+            alt.Tooltip('ds:T', title='Data'),
+            alt.Tooltip('tma:Q', title='TMA (s)', format='.0f'),
+            alt.Tooltip('percentual_tma:Q', title='% TMA', format='.2f')
+        ]
+    ).properties(title='Curva de TMA Projetado', width=800, height=300)
+
+    st.altair_chart(chart_volume, use_container_width=True)
+    st.altair_chart(chart_tma, use_container_width=True)
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
