@@ -70,7 +70,7 @@ if uploaded_file:
     df_limpo_volume = df_limpo_volume[['ds', 'y']].drop_duplicates(subset=['ds']).reset_index(drop=True)
 
     df_limpo_tma = remover_outliers_detalhado(df, 'tma')
-    df_tma = df_limpo_tma.rename(columns={'tma': 'y'})[['ds', 'y']].drop_duplicates(subset=['ds']).reset_index(drop=True)
+    df_tma = df_limpo_tma.groupby('ds')['tma'].mean().reset_index().rename(columns={'tma': 'y'})
 
     modelo_volume = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_volume.fit(df_limpo_volume)
@@ -92,35 +92,12 @@ if uploaded_file:
 
     df_prev_formatado = df_prev[['ds', 'y', 'percentual_volume', 'tma', 'percentual_tma']].copy()
     df_prev_formatado.columns = ['Data', 'Volume projetado', '% curva volume', 'TMA projetado (s)', '% curva TMA']
-    df_prev_formatado['Data'] = pd.to_datetime(df_prev_formatado['Data'])
+    df_prev_formatado['Data'] = df_prev_formatado['Data'].dt.strftime('%d/%m/%Y')
+    df_prev_formatado['% curva volume'] = df_prev_formatado['% curva volume'].map("{:.2f}%".format)
+    df_prev_formatado['% curva TMA'] = df_prev_formatado['% curva TMA'].map("{:.2f}%".format)
 
     st.success("Previsões geradas com sucesso!")
-    st.dataframe(df_prev_formatado.style.format({
-        'Volume projetado': '{:,.0f}',
-        '% curva volume': '{:.2f}%'.format,
-        'TMA projetado (s)': '{:,.0f}',
-        '% curva TMA': '{:.2f}%'.format
-    }), use_container_width=True)
-
-    chart = alt.Chart(df_prev_formatado).transform_fold(
-        ['% curva volume', '% curva TMA'],
-        as_=['Métrica', 'Percentual']
-    ).mark_line(point=True).encode(
-        x=alt.X('Data:T', title='Data'),
-        y=alt.Y('Percentual:Q', title='Percentual (%)'),
-        color='Métrica:N',
-        tooltip=[
-            alt.Tooltip('Data:T', title='Data'),
-            alt.Tooltip('Volume projetado:Q', title='Volume', format='.0f'),
-            alt.Tooltip('% curva volume:N', title='% Volume'),
-            alt.Tooltip('TMA projetado (s):Q', title='TMA (s)', format='.0f'),
-            alt.Tooltip('% curva TMA:N', title='% TMA')
-        ]
-    ).properties(width=900, height=400).interactive()
-
-    st.altair_chart(chart, use_container_width=True)
-
-    df_prev_formatado['Data'] = df_prev_formatado['Data'].dt.strftime('%d/%m/%Y')
+    st.dataframe(df_prev_formatado, use_container_width=True)
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
