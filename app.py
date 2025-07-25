@@ -87,7 +87,23 @@ if uploaded_file:
     previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
 
     df_prev = pd.merge(previsao_volume, previsao_tma, on='ds')
-    df_prev['percentual_volume'] = df_prev['y'] / df_prev['y'].sum() * 100
+
+    # --- AQUI FAZEMOS O CÁLCULO DE PERCENTUAL INDIVIDUAL POR GRUPO (UTEIS, SAB, DOM) ---
+    df_prev['dia_semana_pt'] = df_prev['ds'].dt.day_name().map(mapa_dias)
+
+    def calcular_percentual_por_grupo(df):
+        return df.assign(percentual_volume = df['y'] / df['y'].sum() * 100)
+
+    df_uteis = df_prev[df_prev['dia_semana_pt'].isin(['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'])]
+    df_sabados = df_prev[df_prev['dia_semana_pt'] == 'Sábado']
+    df_domingos = df_prev[df_prev['dia_semana_pt'] == 'Domingo']
+
+    df_uteis = calcular_percentual_por_grupo(df_uteis)
+    df_sabados = calcular_percentual_por_grupo(df_sabados)
+    df_domingos = calcular_percentual_por_grupo(df_domingos)
+
+    df_prev = pd.concat([df_uteis, df_sabados, df_domingos]).sort_values('ds').reset_index(drop=True)
+
     media_tma = df_prev['tma'].mean()
     df_prev['percentual_tma'] = df_prev['tma'] / media_tma * 100
 
