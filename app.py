@@ -8,6 +8,34 @@ import altair as alt
 
 st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", initial_sidebar_state="expanded")
 
+# CSS personalizado para a barra lateral
+st.markdown("""
+    <style>
+    [data-testid="stSidebar"] {
+        background-color: #4b0081;
+    }
+    [data-testid="stSidebar"] * {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox > div > div,
+    [data-testid="stSidebar"] .stMultiSelect > div > div,
+    [data-testid="stSidebar"] .stDateInput > div > div,
+    [data-testid="stSidebar"] .stFileUploader > div > div {
+        background: transparent !important;
+        color: white !important;
+        border: 1px solid white !important;
+    }
+    .stButton button {
+        background-color: #9032bb;
+        color: white;
+        border: none;
+    }
+    .stButton button:hover {
+        background-color: #a84be0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.sidebar.image(
     "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
     use_container_width=True
@@ -117,7 +145,7 @@ if uploaded_file:
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
 
-    # 🎨 Gráficos com cores personalizadas
+    # Gráficos com cores personalizadas
     st.markdown("### 📊 Gráficos de Comparação")
 
     df_chart = df_prev.copy()
@@ -126,7 +154,6 @@ if uploaded_file:
     df_chart['percentual_volume_str'] = df_chart['percentual_volume'].apply(lambda x: format_num_brl(x) + '%')
     df_chart['percentual_tma_str'] = df_chart['percentual_tma'].apply(lambda x: format_num_brl(x) + '%')
 
-    # Volume
     linha_volume = alt.Chart(df_chart).mark_line(color='#4b0081').encode(
         x=alt.X('ds:T', title='Data'),
         y=alt.Y('percentual_volume:Q', title='% Volume')
@@ -144,7 +171,6 @@ if uploaded_file:
         title='Curva de Volume Projetado', width=800, height=300
     )
 
-    # TMA
     linha_tma = alt.Chart(df_chart).mark_line(color='#4b0081').encode(
         x=alt.X('ds:T', title='Data'),
         y=alt.Y('percentual_tma:Q', title='% TMA')
