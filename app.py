@@ -8,36 +8,46 @@ import altair as alt
 
 st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", initial_sidebar_state="expanded")
 
-# Sidebar
 st.sidebar.image(
     "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
     use_container_width=True
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-# Upload
-st.sidebar.markdown("### 📁 Upload da Planilha")
-uploaded_file = st.sidebar.file_uploader("Envie arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
+uploaded_file = st.sidebar.file_uploader("📁 Upload: Arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
 
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
 
-def remove_outliers_por_grupo(df, grupo_col, valor_col):
-    dfs_limpos = []
-    for grupo in df[grupo_col].unique():
-        df_grupo = df[df[grupo_col] == grupo].copy()
-        if len(df_grupo) == 0:
+# Função para detectar ocorrência do dia da semana no mês
+def ocorrencia_semana(data):
+    dia_semana = data.weekday()
+    dias_mes = pd.date_range(start=data.replace(day=1), end=data)
+    return sum(d.weekday() == dia_semana for d in dias_mes)
+
+# Função para remover outliers por dia da semana e ordem de ocorrência
+def remover_outliers_detalhado(df, valor_col):
+    df = df.copy()
+    df['ordem'] = df['ds'].apply(ocorrencia_semana)
+    grupos = df.groupby(['dia_semana_pt', 'ordem'])
+    df_filtrado = []
+
+    for (dia, ordem), grupo in grupos:
+        if len(grupo) < 3:
+            df_filtrado.append(grupo)
             continue
-        Q1, Q3 = df_grupo[valor_col].quantile([0.25, 0.75])
+        Q1 = grupo[valor_col].quantile(0.25)
+        Q3 = grupo[valor_col].quantile(0.75)
         IQR = Q3 - Q1
-        lim_inferior = Q1 - 1.5 * IQR
-        lim_superior = Q3 + 1.5 * IQR
-        df_grupo_limpo = df_grupo[(df_grupo[valor_col] >= lim_inferior) & (df_grupo[valor_col] <= lim_superior)]
-        dfs_limpos.append(df_grupo_limpo)
-    return pd.concat(dfs_limpos) if dfs_limpos else pd.DataFrame(columns=df.columns)
+        lim_inf = Q1 - 1.5 * IQR
+        lim_sup = Q3 + 1.5 * IQR
+        grupo_filtrado = grupo[(grupo[valor_col] >= lim_inf) & (grupo[valor_col] <= lim_sup)]
+        df_filtrado.append(grupo_filtrado)
+
+    return pd.concat(df_filtrado).sort_values('ds')
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('.xlsx', '.xls')) else pd.read_csv(uploaded_file)
+    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('xlsx', 'xls')) else pd.read_csv(uploaded_file)
     df.columns = df.columns.str.strip()
 
     if 'Data' not in df.columns or 'Quantidade de Ligações' not in df.columns or 'TMA' not in df.columns:
@@ -54,200 +64,71 @@ if uploaded_file:
         'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
     }
     df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias)
+    df['ordem'] = df['ds'].apply(ocorrencia_semana)
 
-    mes_hoje = pd.Period(datetime.now(), freq='M')
-    meses_proximos = [mes_hoje + i for i in range(4)]
+    df_limpo_volume = remover_outliers_detalhado(df, 'y')
+    df_limpo_volume = df_limpo_volume[['ds', 'y']].drop_duplicates(subset=['ds']).reset_index(drop=True)
 
-    meses_disponiveis = sorted(df['ano_mes'].unique())
-    meses_disponiveis_str = [str(m) for m in meses_disponiveis]
-    mes_base = st.sidebar.selectbox("📅 Mês base (histórico)", options=meses_disponiveis_str, index=len(meses_disponiveis_str)-1)
-    mes_base = pd.Period(mes_base, freq='M')
+    df_limpo_tma = remover_outliers_detalhado(df, 'tma')
+    df_tma = df_limpo_tma.rename(columns={'tma': 'y'})[['ds', 'y']].drop_duplicates(subset=['ds']).reset_index(drop=True)
 
-    meses_para_projetar = [m for m in meses_proximos if m not in meses_disponiveis]
-    meses_proj_str = st.sidebar.multiselect("🌟 Meses projetados (futuros até +3 meses)", options=[str(m) for m in meses_para_projetar], default=[str(m) for m in meses_para_projetar])
-    meses_proj = [pd.Period(m, freq='M') for m in meses_proj_str]
-
-    tipo_curva = st.radio("📈 Tipo de Curva", ["Volume", "TMA"], horizontal=True)
-
-    def ocorrencia_semana(data):
-        dia_semana = data.weekday()
-        dias_mes = pd.date_range(start=data.replace(day=1), end=data)
-        return sum(d.weekday() == dia_semana for d in dias_mes)
-
-    def calcular_curva(df_mes, dias_filtrados, coluna_valor, sufixo=""):
-        df_mes = df_mes[df_mes['dia_semana_pt'].isin(dias_filtrados)].copy()
-        if df_mes.empty:
-            return pd.Series(dtype=float)
-        df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
-        ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
-        df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
-
-        max_ordem = df_mes['ordem'].max()
-        rotulos_esperados = [f"{ordinais.get(i)} {dia}" for dia in dias_filtrados for i in range(1, max_ordem + 1)]
-
-        grupo = df_mes.groupby('rotulo')[coluna_valor].sum()
-        grupo = grupo.reindex(rotulos_esperados, fill_value=0)
-
-        if coluna_valor == "tma":
-            media_mes = grupo.mean() if grupo.mean() > 0 else 1
-            percentual = grupo / media_mes * 100
-        else:
-            grupo_total = grupo.sum()
-            percentual = grupo / grupo_total * 100 if grupo_total > 0 else grupo
-
-        percentual.name = f"Percentual{sufixo}"
-        return percentual
-
-    coluna_analise = 'tma' if tipo_curva == "TMA" else 'y'
-    curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, coluna_analise, sufixo=" (Histórico)")
-
-    # Limpar outliers separadamente para volume
-    df_limpo_volume = remove_outliers_por_grupo(df, 'dia_semana_pt', 'y')
-    df_limpo_volume = df_limpo_volume[['ds', 'y']].copy()
-
-    # Limpar outliers separadamente para TMA
-    df_limpo_tma = remove_outliers_por_grupo(df, 'dia_semana_pt', 'tma')
-    df_tma = df_limpo_tma.rename(columns={'tma': 'y'})[['ds', 'y']].copy()
-
-    # Treinar modelos Prophet
-    modelo_volume = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
-    modelo_volume.add_seasonality(name='monthly', period=30.5, fourier_order=5)
+    modelo_volume = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_volume.fit(df_limpo_volume)
-
-    modelo_tma = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
-    modelo_tma.add_seasonality(name='monthly', period=30.5, fourier_order=5)
+    modelo_tma = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_tma.fit(df_tma)
 
-    resultados = {}
+    mes_proj = st.sidebar.date_input("🗓 Escolha o primeiro dia do mês para projeção futura", value=datetime.today().replace(day=1))
+    mes_proj = pd.to_datetime(mes_proj)
+    dias_futuros = pd.date_range(start=mes_proj, end=(mes_proj + pd.offsets.MonthEnd(0)))
+    df_futuro = pd.DataFrame({'ds': dias_futuros})
 
-    for mes_proj in meses_proj:
-        df_proj = df[df['ano_mes'] == mes_proj]
+    previsao_volume = modelo_volume.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'y'})
+    previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
 
-        if df_proj.empty:
-            start_date = mes_proj.to_timestamp()
-            end_date = (mes_proj + 1).to_timestamp() - timedelta(days=1)
-            futuro = pd.date_range(start=start_date, end=end_date, freq='D')
-            df_futuro = pd.DataFrame({'ds': futuro.to_list()})
+    df_prev = pd.merge(previsao_volume, previsao_tma, on='ds')
+    df_prev['percentual_volume'] = df_prev['y'] / df_prev['y'].sum() * 100
+    media_tma = df_prev['tma'].mean()
+    df_prev['percentual_tma'] = df_prev['tma'] / media_tma * 100
 
-            previsao_volume = modelo_volume.predict(df_futuro)
-            previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
+    df_prev_formatado = df_prev[['ds', 'y', 'percentual_volume', 'tma', 'percentual_tma']].copy()
+    df_prev_formatado.columns = ['Data', 'Volume projetado', '% curva volume', 'TMA projetado (s)', '% curva TMA']
+    df_prev_formatado['Data'] = pd.to_datetime(df_prev_formatado['Data'])
 
-            previsao_tma = modelo_tma.predict(df_futuro)
-            previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
+    st.success("Previsões geradas com sucesso!")
+    st.dataframe(df_prev_formatado.style.format({
+        'Volume projetado': '{:,.0f}',
+        '% curva volume': '{:.2f}%'.format,
+        'TMA projetado (s)': '{:,.0f}',
+        '% curva TMA': '{:.2f}%'.format
+    }), use_container_width=True)
 
-            df_prev = pd.DataFrame({
-                'ds': df_futuro['ds'],
-                'y': previsao_volume['y'],
-                'tma': previsao_tma['tma']
-            })
+    chart = alt.Chart(df_prev_formatado).transform_fold(
+        ['% curva volume', '% curva TMA'],
+        as_=['Métrica', 'Percentual']
+    ).mark_line(point=True).encode(
+        x=alt.X('Data:T', title='Data'),
+        y=alt.Y('Percentual:Q', title='Percentual (%)'),
+        color='Métrica:N',
+        tooltip=[
+            alt.Tooltip('Data:T', title='Data'),
+            alt.Tooltip('Volume projetado:Q', title='Volume', format='.0f'),
+            alt.Tooltip('% curva volume:N', title='% Volume'),
+            alt.Tooltip('TMA projetado (s):Q', title='TMA (s)', format='.0f'),
+            alt.Tooltip('% curva TMA:N', title='% TMA')
+        ]
+    ).properties(width=900, height=400).interactive()
 
-            df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
-            df_prev['dia_semana_pt'] = df_prev['dia_semana'].map(mapa_dias)
+    st.altair_chart(chart, use_container_width=True)
 
-            dados_proj = df_prev
-        else:
-            dados_proj = df_proj
+    df_prev_formatado['Data'] = df_prev_formatado['Data'].dt.strftime('%d/%m/%Y')
 
-        curva_proj = calcular_curva(dados_proj, dias_selecionados, coluna_analise, sufixo=f" ({mes_proj})")
-        comparativo = pd.concat([curva_base, curva_proj], axis=1).fillna(0)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df_prev_formatado.to_excel(writer, index=False, sheet_name='Projecao')
 
-        resultados[str(mes_proj)] = {
-            "dados": dados_proj,
-            "curva": curva_proj,
-            "comparativo": comparativo
-        }
-
-    tabs = st.tabs(["📊 Comparativos", "📅 Curvas Diárias", "📥 Exportação"])
-
-    with tabs[0]:
-        for mes_str, dados in resultados.items():
-            st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_str} — {tipo_curva}")
-            curva_fmt = dados['comparativo'].copy()
-            curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
-            curva_fmt[f'{mes_str} (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
-            st.dataframe(curva_fmt[["Histórico (%)", f"{mes_str} (%)"]], use_container_width=True)
-
-    with tabs[1]:
-        for mes_str, dados in resultados.items():
-            st.subheader(f"📅 Curva Diária da Projeção: {mes_str} — {tipo_curva}")
-            df_mes_proj = dados['dados']
-            total_mes = df_mes_proj[coluna_analise].sum()
-            if total_mes > 0:
-                df_dia = df_mes_proj[['ds', coluna_analise]].copy()
-                if tipo_curva == "TMA":
-                    media_tma = df_dia[coluna_analise].mean()
-                    df_dia['percentual'] = df_dia[coluna_analise] / media_tma * 100
-                    tooltip = [
-                        alt.Tooltip('ds:T', title='Data'),
-                        alt.Tooltip(f'{coluna_analise}:Q', title='TMA (s)', format='.0f'),
-                        alt.Tooltip('percentual:Q', title='% sobre média', format='.2f')
-                    ]
-                else:
-                    df_dia['percentual'] = df_dia[coluna_analise] / total_mes * 100
-                    tooltip = [
-                        alt.Tooltip('ds:T', title='Data'),
-                        alt.Tooltip(f'{coluna_analise}:Q', title='Ligações', format='.0f'),
-                        alt.Tooltip('percentual:Q', title='Percentual Diário (%)', format='.2f')
-                    ]
-
-                chart_dia = alt.Chart(df_dia).mark_line(point=True).encode(
-                    x=alt.X('ds:T', title='Data'),
-                    y=alt.Y('percentual:Q', title='Percentual (%)'),
-                    tooltip=tooltip
-                ).properties(width=800, height=350).interactive()
-                st.altair_chart(chart_dia, use_container_width=True)
-
-    with tabs[2]:
-        dfs_export = []
-        meses_todos = [mes_base] + meses_proj
-
-        for mes in meses_todos:
-            df_mes = df[df['ano_mes'] == mes].copy() if mes in meses_disponiveis else pd.DataFrame()
-
-            if df_mes.empty:
-                start_date = mes.to_timestamp()
-                end_date = (mes + 1).to_timestamp() - timedelta(days=1)
-                futuro = pd.date_range(start=start_date, end=end_date, freq='D')
-                df_futuro = pd.DataFrame({'ds': futuro.to_list()})
-
-                previsao_volume = modelo_volume.predict(df_futuro)
-                previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
-
-                previsao_tma = modelo_tma.predict(df_futuro)
-                previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
-
-                df_mes = pd.DataFrame({
-                    'ds': df_futuro['ds'],
-                    'y': previsao_volume['y'],
-                    'tma': previsao_tma['tma']
-                })
-
-            total_volume = df_mes['y'].sum()
-            df_mes['percentual_volume'] = (df_mes['y'] / total_volume * 100) if total_volume > 0 else 0
-
-            media_tma = df_mes['tma'].mean() if df_mes['tma'].mean() > 0 else 1
-            df_mes['percentual_tma'] = df_mes['tma'] / media_tma * 100
-
-            df_mes_export = pd.DataFrame({
-                'Data mês projeção': df_mes['ds'].dt.strftime('%d/%m/%Y'),
-                'Volume projetado': df_mes['y'].round().astype(int),
-                'Percentual da curva de volume (%)': df_mes['percentual_volume'].map(lambda x: f"{x:.2f}".replace('.', ',') + '%'),
-                'TMA projetado (s)': df_mes['tma'].round(0).astype(int),
-                'Percentual da curva de TMA (%)': df_mes['percentual_tma'].map(lambda x: f"{x:.2f}".replace('.', ',') + '%'),
-                'Mês': mes.strftime('%m/%Y'),
-            })
-
-            dfs_export.append(df_mes_export)
-
-        df_export_final = pd.concat(dfs_export, ignore_index=True)
-
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_export_final.to_excel(writer, sheet_name="Projecoes_Unificadas", index=False)
-
-        st.download_button(
-            label="📥 Baixar dados unificados em Excel",
-            data=buffer.getvalue(),
-            file_name="projecoes_unificadas.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.download_button(
+        label="📥 Baixar projeção completa",
+        data=buffer.getvalue(),
+        file_name="projecao_completa.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
