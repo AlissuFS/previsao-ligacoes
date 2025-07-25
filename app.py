@@ -70,7 +70,7 @@ st.markdown("""
 
     .stButton button {
         background-color: #9032bb;
-        color: white;
+        color: black;
         border: none;
         border-radius: 10px;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
