@@ -87,7 +87,7 @@ if uploaded_file:
     coluna_analise = 'tma' if tipo_curva == "TMA" else 'y'
     curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, coluna_analise, sufixo=" (Histórico)")
 
-    # Preparar e treinar modelos Prophet
+    # Treinar modelos Prophet
 
     # Limpar outliers para volume
     Q1, Q3 = df['y'].quantile([0.25, 0.75])
@@ -120,7 +120,7 @@ if uploaded_file:
             previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
 
             df_prev = pd.DataFrame({
-                'ds': df_futuro['ds'],
+                'ds': df_futuro,
                 'y': previsao_volume['y'],
                 'tma': previsao_tma['tma']
             })
@@ -182,15 +182,58 @@ if uploaded_file:
                 st.altair_chart(chart_dia, use_container_width=True)
 
     with tabs[2]:
+        # Exportação unificada
+        dfs_export = []
+
+        meses_todos = [mes_base] + meses_proj  # incluir mês base
+
+        for mes in meses_todos:
+            df_mes = df[df['ano_mes'] == mes].copy() if mes in meses_disponiveis else pd.DataFrame()
+
+            if df_mes.empty:
+                start_date = mes.to_timestamp()
+                end_date = (mes + 1).to_timestamp() - timedelta(days=1)
+                futuro = pd.date_range(start=start_date, end=end_date)
+                df_futuro = pd.DataFrame({'ds': futuro})
+
+                previsao_volume = modelo_volume.predict(df_futuro)
+                previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
+
+                previsao_tma = modelo_tma.predict(df_futuro)
+                previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
+
+                df_mes = pd.DataFrame({
+                    'ds': df_futuro,
+                    'y': previsao_volume['y'],
+                    'tma': previsao_tma['tma']
+                })
+
+            total_volume = df_mes['y'].sum()
+            df_mes['percentual_volume'] = (df_mes['y'] / total_volume * 100) if total_volume > 0 else 0
+
+            media_tma = df_mes['tma'].mean() if df_mes['tma'].mean() > 0 else 1
+            df_mes['percentual_tma'] = df_mes['tma'] / media_tma * 100
+
+            df_mes_export = pd.DataFrame({
+                'Data mês projeção': df_mes['ds'].dt.strftime('%d/%m/%Y'),
+                'Volume projetado': df_mes['y'].round().astype(int),
+                'Percentual da curva de volume (%)': df_mes['percentual_volume'].map(lambda x: f"{x:.2f}".replace('.', ',') + '%'),
+                'TMA projetado (s)': df_mes['tma'].round(0).astype(int),
+                'Percentual da curva de TMA (%)': df_mes['percentual_tma'].map(lambda x: f"{x:.2f}".replace('.', ',') + '%'),
+                'Mês': mes.strftime('%m/%Y'),
+            })
+
+            dfs_export.append(df_mes_export)
+
+        df_export_final = pd.concat(dfs_export, ignore_index=True)
+
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            for mes_str, dados in resultados.items():
-                comp = dados['comparativo'].reset_index()
-                comp.to_excel(writer, sheet_name=f"Comparativo_{mes_str}", index=False)
+            df_export_final.to_excel(writer, sheet_name="Projecoes_Unificadas", index=False)
 
         st.download_button(
-            label="📥 Baixar resultados em Excel",
+            label="📥 Baixar dados unificados em Excel",
             data=buffer.getvalue(),
-            file_name="resultados_previsao.xlsx",
+            file_name="projecoes_unificadas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
