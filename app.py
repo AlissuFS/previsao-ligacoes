@@ -15,7 +15,7 @@ st.markdown("""
         background-color: #4b0081;
     }
     [data-testid="stSidebar"] * {
-        color: white !important;
+        color: transparent !important;
     }
 
     [data-testid="stSidebar"] .stSelectbox > div > div,
