@@ -51,7 +51,7 @@ st.markdown("""
     /* Estilo do botão do uploader */
     [data-testid="stFileUploadDropzone"] button {
         background-color: #9032bb !important;
-        color: white !important;
+        color: black !important;
         border-radius: 10px !important;
         border: none !important;
         padding: 10px 20px !important;
