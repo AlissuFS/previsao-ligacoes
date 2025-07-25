@@ -19,14 +19,11 @@ uploaded_file = st.sidebar.file_uploader("📁 Upload: Arquivo com colunas 'Data
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
 
-# Função para detectar ocorrência do dia da semana no mês
 def ocorrencia_semana(data):
     dia_semana = data.weekday()
     dias_mes = pd.date_range(start=data.replace(day=1), end=data)
     return sum(d.weekday() == dia_semana for d in dias_mes)
 
-# Função para remover outliers por dia da semana e ordem de ocorrência
-# Para domingo calcula a média simples por ocorrência (ordem)
 def remover_outliers_detalhado(df, valor_col):
     df = df.copy()
     df['ordem'] = df['ds'].apply(ocorrencia_semana)
@@ -99,7 +96,7 @@ if uploaded_file:
     df_futuro = pd.DataFrame({'ds': dias_futuros})
 
     previsao_volume = modelo_volume.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'y'})
-    previsao_volume['y'] = previsao_volume['y'].apply(lambda x: 1 if x <= 0 else x)  # ✅ Correção aplicada aqui
+    previsao_volume['y'] = previsao_volume['y'].apply(lambda x: 1 if x <= 0 else x)
 
     previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
 
@@ -120,6 +117,7 @@ if uploaded_file:
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
 
+    # 🎨 Gráficos com cores personalizadas
     st.markdown("### 📊 Gráficos de Comparação")
 
     df_chart = df_prev.copy()
@@ -128,25 +126,41 @@ if uploaded_file:
     df_chart['percentual_volume_str'] = df_chart['percentual_volume'].apply(lambda x: format_num_brl(x) + '%')
     df_chart['percentual_tma_str'] = df_chart['percentual_tma'].apply(lambda x: format_num_brl(x) + '%')
 
-    chart_volume = alt.Chart(df_chart).mark_line(point=True).encode(
+    # Volume
+    linha_volume = alt.Chart(df_chart).mark_line(color='#4b0081').encode(
         x=alt.X('ds:T', title='Data'),
-        y=alt.Y('percentual_volume:Q', title='% Volume'),
+        y=alt.Y('percentual_volume:Q', title='% Volume')
+    )
+    pontos_volume = alt.Chart(df_chart).mark_point(color='#9032bb', filled=True).encode(
+        x='ds:T',
+        y='percentual_volume:Q',
         tooltip=[
             alt.Tooltip('ds:T', title='Data'),
             alt.Tooltip('y:Q', title='Volume'),
             alt.Tooltip('percentual_volume_str:N', title='% Volume')
         ]
-    ).properties(title='Curva de Volume Projetado', width=800, height=300)
+    )
+    chart_volume = (linha_volume + pontos_volume).properties(
+        title='Curva de Volume Projetado', width=800, height=300
+    )
 
-    chart_tma = alt.Chart(df_chart).mark_line(point=True, color='orange').encode(
+    # TMA
+    linha_tma = alt.Chart(df_chart).mark_line(color='#4b0081').encode(
         x=alt.X('ds:T', title='Data'),
-        y=alt.Y('percentual_tma:Q', title='% TMA'),
+        y=alt.Y('percentual_tma:Q', title='% TMA')
+    )
+    pontos_tma = alt.Chart(df_chart).mark_point(color='#9032bb', filled=True).encode(
+        x='ds:T',
+        y='percentual_tma:Q',
         tooltip=[
             alt.Tooltip('ds:T', title='Data'),
             alt.Tooltip('tma:Q', title='TMA (s)', format='.0f'),
             alt.Tooltip('percentual_tma_str:N', title='% TMA')
         ]
-    ).properties(title='Curva de TMA Projetado', width=800, height=300)
+    )
+    chart_tma = (linha_tma + pontos_tma).properties(
+        title='Curva de TMA Projetado', width=800, height=300
+    )
 
     st.altair_chart(chart_volume, use_container_width=True)
     st.altair_chart(chart_tma, use_container_width=True)
