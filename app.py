@@ -15,50 +15,7 @@ st.sidebar.image(
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-# Dark Mode
-dark_mode = st.sidebar.checkbox("🌙 Modo Escuro", value=False)
-
-# Tema
-css_style = """
-<style>
-.block-container {background-color: %s; color: %s;}
-.stApp {background-color: %s; color: %s;}
-label, .stMarkdown, .stTextInput>div>input, .stSelectbox label, .stMultiselect label, .stTextArea label, .stDateInput label, .stFileUploader label {
-    color: %s !important;
-}
-.stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb], .stMultiselect div[data-baseweb] {
-    background-color: %s !important;
-    color: %s !important;
-    border-color: %s !important;
-}
-.stButton>button, .stDownloadButton>button {
-    background-color: #6600cc !important;
-    color: white !important;
-    font-weight: 600 !important;
-    border-radius: 6px !important;
-}
-[data-testid="stSidebar"] {
-    background-color: %s !important;
-    color: %s !important;
-}
-[data-testid="stSidebar"] * {
-    color: %s !important;
-}
-</style>
-""" % (
-    "#121212" if dark_mode else "white",
-    "#e0e0e0" if dark_mode else "black",
-    "#121212" if dark_mode else "white",
-    "#e0e0e0" if dark_mode else "black",
-    "#e0e0e0" if dark_mode else "black",
-    "#1e1e1e" if dark_mode else "white",
-    "#e0e0e0" if dark_mode else "black",
-    "#444" if dark_mode else "#ccc",
-    "#121212" if dark_mode else "white",
-    "#e0e0e0" if dark_mode else "black",
-    "#e0e0e0" if dark_mode else "black"
-)
-st.markdown(css_style, unsafe_allow_html=True)
+# Removido dark_mode e CSS customizado
 
 # Upload
 st.sidebar.markdown("### 📁 Upload da Planilha")
@@ -86,7 +43,6 @@ if uploaded_file:
     }
     df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias)
 
-    # Base e projeção
     mes_hoje = pd.Period(datetime.now(), freq='M')
     meses_proximos = [mes_hoje + i for i in range(4)]
 
@@ -99,7 +55,6 @@ if uploaded_file:
     meses_proj_str = st.sidebar.multiselect("🌟 Meses projetados (futuros até +3 meses)", options=[str(m) for m in meses_para_projetar], default=[str(m) for m in meses_para_projetar])
     meses_proj = [pd.Period(m, freq='M') for m in meses_proj_str]
 
-    # Seleção entre Volume e TMA
     tipo_curva = st.radio("📈 Tipo de Curva", ["Volume", "TMA"], horizontal=True)
 
     def ocorrencia_semana(data):
@@ -134,26 +89,44 @@ if uploaded_file:
     coluna_analise = 'tma' if tipo_curva == "TMA" else 'y'
     curva_base = calcular_curva(df[df['ano_mes'] == mes_base], dias_selecionados, coluna_analise, sufixo=" (Histórico)")
 
-    tabs = st.tabs(["📊 Comparativos", "📅 Curvas Diárias", "📥 Exportação"])
+    # Modelos Prophet separados para volume e TMA
+    Q1, Q3 = df['y'].quantile([0.25, 0.75])
+    IQR = Q3 - Q1
+    df_limpo_volume = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].copy()
+
+    modelo_volume = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
+    modelo_volume.fit(df_limpo_volume)
+
+    df_tma = df[['ds', 'tma']].copy()
+    modelo_tma = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
+    modelo_tma.fit(df_tma)
+
     resultados = {}
 
     for mes_proj in meses_proj:
         df_proj = df[df['ano_mes'] == mes_proj]
+
         if df_proj.empty:
-            df_limpo = df.copy()
-            Q1, Q3 = df['y'].quantile([0.25, 0.75])
-            IQR = Q3 - Q1
-            df_limpo = df[(df['y'] >= Q1 - 1.5 * IQR) & (df['y'] <= Q3 + 1.5 * IQR)][['ds', 'y']].sort_values('ds')
-            modelo = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
-            modelo.fit(df_limpo)
-            futuro = pd.date_range(start=mes_proj.to_timestamp(), end=(mes_proj + 1).to_timestamp() - timedelta(days=1))
+            start_date = mes_proj.to_timestamp()
+            end_date = (mes_proj + 1).to_timestamp() - timedelta(days=1)
+            futuro = pd.date_range(start=start_date, end=end_date)
             df_futuro = pd.DataFrame({'ds': futuro})
-            previsao = modelo.predict(df_futuro)
-            df_prev = previsao[['ds', 'yhat']].rename(columns={'yhat': 'y'})
-            df_prev['y'] = df_prev['y'].clip(lower=0)
-            df_prev['tma'] = df_prev['y'] * 0.0  # Sem histórico de TMA previsto
+
+            previsao_volume = modelo_volume.predict(df_futuro)
+            previsao_volume['y'] = previsao_volume['yhat'].clip(lower=0)
+
+            previsao_tma = modelo_tma.predict(df_futuro)
+            previsao_tma['tma'] = previsao_tma['yhat'].clip(lower=0)
+
+            df_prev = pd.DataFrame({
+                'ds': df_futuro['ds'],
+                'y': previsao_volume['y'],
+                'tma': previsao_tma['tma']
+            })
+
             df_prev['dia_semana'] = df_prev['ds'].dt.day_name()
             df_prev['dia_semana_pt'] = df_prev['dia_semana'].map(mapa_dias)
+
             dados_proj = df_prev
         else:
             dados_proj = df_proj
@@ -166,6 +139,8 @@ if uploaded_file:
             "curva": curva_proj,
             "comparativo": comparativo
         }
+
+    tabs = st.tabs(["📊 Comparativos", "📅 Curvas Diárias", "📥 Exportação"])
 
     with tabs[0]:
         for mes_str, dados in resultados.items():
