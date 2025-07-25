@@ -61,7 +61,6 @@ def remover_outliers_detalhado(df, valor_col):
     return pd.concat(df_filtrado).sort_values('ds')
 
 def format_num_brl(x):
-    # Converte número float para string com separador milhar ponto e decimal vírgula
     return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 if uploaded_file:
@@ -101,7 +100,7 @@ if uploaded_file:
     df_futuro = pd.DataFrame({'ds': dias_futuros})
 
     previsao_volume = modelo_volume.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'y'})
-    previsao_volume['y'] = previsao_volume['y'].clip(lower=0)
+    previsao_volume['y'] = previsao_volume['y'].apply(lambda x: max(x, 1))  # <= aqui a correção
     previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
 
     df_prev = pd.merge(previsao_volume, previsao_tma, on='ds')
@@ -109,7 +108,6 @@ if uploaded_file:
     media_tma = df_prev['tma'].mean()
     df_prev['percentual_tma'] = df_prev['tma'] / media_tma * 100
 
-    # Criar colunas formatadas para tooltip e tabela
     df_prev['percentual_volume_str'] = df_prev['percentual_volume'].apply(lambda x: format_num_brl(x) + '%')
     df_prev['percentual_tma_str'] = df_prev['percentual_tma'].apply(lambda x: format_num_brl(x) + '%')
 
@@ -122,14 +120,11 @@ if uploaded_file:
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
 
-    # Gráficos comparativos
     st.markdown("### 📊 Gráficos de Comparação")
 
     df_chart = df_prev.copy()
     df_chart['percentual_volume'] = df_chart['percentual_volume'].round(2)
     df_chart['percentual_tma'] = df_chart['percentual_tma'].round(2)
-
-    # Adicionar colunas string formatadas para tooltip
     df_chart['percentual_volume_str'] = df_chart['percentual_volume'].apply(lambda x: format_num_brl(x) + '%')
     df_chart['percentual_tma_str'] = df_chart['percentual_tma'].apply(lambda x: format_num_brl(x) + '%')
 
