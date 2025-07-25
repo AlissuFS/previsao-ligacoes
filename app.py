@@ -19,7 +19,7 @@ st.sidebar.markdown("### 🔍 Configurações")
 # Dark Mode
 dark_mode = st.sidebar.checkbox("🌙 Modo Escuro", value=False)
 
-# CSS para modo claro e escuro, sem cor roxa no menu
+# CSS dinâmico
 css_style = """
 <style>
 .block-container {background-color: %s; color: %s;}
@@ -121,13 +121,10 @@ if uploaded_file:
         df_mes['ordem'] = df_mes['ds'].apply(ocorrencia_semana)
         ordinais = {1: '1ª', 2: '2ª', 3: '3ª', 4: '4ª', 5: '5ª'}
         df_mes['rotulo'] = df_mes.apply(lambda row: f"{ordinais.get(row['ordem'], str(row['ordem']) + 'ª')} {row['dia_semana_pt']}", axis=1)
-
         max_ordem = df_mes['ordem'].max()
         rotulos_esperados = [f"{ordinais.get(i)} {dia}" for dia in dias_filtrados for i in range(1, max_ordem + 1)]
-
         grupo = df_mes.groupby('rotulo')['y'].sum()
         grupo = grupo.reindex(rotulos_esperados, fill_value=0)
-
         grupo_total = grupo.sum()
         percentual = grupo / grupo_total * 100 if grupo_total > 0 else grupo
         percentual.name = f"Percentual{sufixo}"
@@ -157,6 +154,8 @@ if uploaded_file:
             df_prev['dia_semana_pt'] = df_prev['dia_semana'].map(mapa_dias).fillna(df_prev['dia_semana'])
             dados_proj = df_prev
         else:
+            df_proj['dia_semana'] = df_proj['ds'].dt.day_name()
+            df_proj['dia_semana_pt'] = df_proj['dia_semana'].map(mapa_dias).fillna(df_proj['dia_semana'])
             dados_proj = df_proj
 
         curva_proj = calcular_curva(dados_proj, dias_selecionados, sufixo=f" ({mes_proj})")
@@ -172,8 +171,8 @@ if uploaded_file:
         for mes_str, dados in resultados.items():
             st.subheader(f"📊 Comparativo: {mes_base.strftime('%m/%Y')} vs {mes_str}")
             curva_fmt = dados['comparativo'].copy()
-            curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
-            curva_fmt[f'{mes_str} (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0%")
+            curva_fmt['Histórico (%)'] = curva_fmt.iloc[:, 0].apply(lambda x: f"{x:.2f}%" if x > 0 else "0.00%")
+            curva_fmt[f'{mes_str} (%)'] = curva_fmt.iloc[:, 1].apply(lambda x: f"{x:.2f}%" if x > 0 else "0.00%")
             st.dataframe(curva_fmt[["Histórico (%)", f"{mes_str} (%)"]], use_container_width=True)
 
     with tabs[1]:
@@ -182,12 +181,17 @@ if uploaded_file:
             df_mes_proj = dados['dados']
             total_mes = df_mes_proj['y'].sum()
             if total_mes > 0:
-                df_dia = df_mes_proj[['ds', 'y']].copy()
+                df_dia = df_mes_proj[['ds', 'y', 'dia_semana_pt']].copy()
                 df_dia['percentual'] = df_dia['y'] / total_mes * 100
                 chart_dia = alt.Chart(df_dia).mark_line(point=True).encode(
                     x=alt.X('ds:T', title='Data'),
                     y=alt.Y('percentual:Q', title='Percentual Diário (%)'),
-                    tooltip=[alt.Tooltip('ds:T', title='Data'), alt.Tooltip('percentual:Q', format='.2f')]
+                    tooltip=[
+                        alt.Tooltip('ds:T', title='Data'),
+                        alt.Tooltip('dia_semana_pt:N', title='Dia da Semana'),
+                        alt.Tooltip('y:Q', title='Ligações'),
+                        alt.Tooltip('percentual:Q', title='Percentual Diário (%)', format='.2f')
+                    ]
                 ).properties(width=800, height=350).interactive()
                 st.altair_chart(chart_dia, use_container_width=True)
 
