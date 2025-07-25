@@ -11,29 +11,33 @@ st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", ini
 # CSS personalizado para a barra lateral
 st.markdown("""
     <style>
-    [data-testid="stSidebar"] {
-        background-color: #4b0081;
-    }
-    [data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .stSelectbox > div > div,
-    [data-testid="stSidebar"] .stMultiSelect > div > div,
-    [data-testid="stSidebar"] .stDateInput > div > div,
-    [data-testid="stSidebar"] .stFileUploader > div > div {
-        background: transparent !important;
-        color: white !important;
-        border: 1px solid white !important;
-    }
-    .stButton button {
-        background-color: #9032bb;
-        color: white;
-        border: none;
-    }
-    .stButton button:hover {
-        background-color: #a84be0;
-    }
-    </style>
+[data-testid="stSidebar"] {
+    background-color: #4b0081;
+}
+[data-testid="stSidebar"] * {
+    color: white !important;
+}
+[data-testid="stSidebar"] .stSelectbox > div > div,
+[data-testid="stSidebar"] .stMultiSelect > div > div,
+[data-testid="stSidebar"] .stDateInput > div > div,
+[data-testid="stSidebar"] .stFileUploader > div > div {
+    background: #4b0081 !important;
+    color: white !important;
+    border: 1px solid white !important;
+}
+[data-testid="stSidebar"] .stMultiSelect .css-12jo7m5 {
+    background-color: #9032bb !important;
+    color: white !important;
+}
+.stButton button {
+    background-color: #9032bb;
+    color: white;
+    border: none;
+}
+.stButton button:hover {
+    background-color: #a84be0;
+}
+</style>
 """, unsafe_allow_html=True)
 
 st.sidebar.image(
