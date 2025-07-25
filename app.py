@@ -35,7 +35,6 @@ def remover_outliers_detalhado(df, valor_col):
 
     for (dia, ordem), grupo in grupos:
         if dia == 'Domingo':
-            # Média simples para domingo na ocorrência (ordem)
             media_valor = grupo[valor_col].mean()
             data_referencia = grupo['ds'].iloc[0]
             df_filtrado.append(pd.DataFrame({
@@ -100,7 +99,8 @@ if uploaded_file:
     df_futuro = pd.DataFrame({'ds': dias_futuros})
 
     previsao_volume = modelo_volume.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'y'})
-    previsao_volume['y'] = previsao_volume['y'].apply(lambda x: max(x, 1))  # <= aqui a correção
+    previsao_volume['y'] = previsao_volume['y'].apply(lambda x: 1 if x <= 0 else x)  # ✅ Correção aplicada aqui
+
     previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
 
     df_prev = pd.merge(previsao_volume, previsao_tma, on='ds')
