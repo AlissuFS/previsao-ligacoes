@@ -48,14 +48,16 @@ def aplicar_pausas(curva, pausas):
     curva = curva.copy()
     for hora_str, duracao in pausas:
         h = int(hora_str.split(":")[0])
-        curva.loc[h, 'disponiveis'] *= max(0, 1 - duracao / 60)  # Reduz disponibilidade
+        idx = curva[curva['hora'] == h].index
+        if not idx.empty:
+            curva.loc[idx, 'disponiveis'] *= max(0, 1 - duracao / 60)  # Reduz disponibilidade proporcionalmente
     return curva
 
 # Distribui volume do dia por hora com curva horária padrão
 def curva_horaria(volume_total):
     distribuicao = np.array([0.02, 0.04, 0.05, 0.06, 0.08, 0.10, 0.11, 0.12, 0.11, 0.10, 0.08, 0.06, 0.04, 0.03])
     distribuicao /= distribuicao.sum()
-    horas = list(range(8, 22))  # 14 horas
+    horas = list(range(8, 22))  # 14 horas das 8h às 21h inclusive
     volume_horario = volume_total * distribuicao
     return pd.DataFrame({"hora": horas, "volume": volume_horario})
 
@@ -73,8 +75,11 @@ if dados:
 
     df_volume = df[['ds', 'y']].dropna()
     df_tma = df[['ds', 'tma']].dropna().groupby('ds').mean().reset_index()
-    modelo_v = Prophet(daily_seasonality=True, weekly_seasonality=True).fit(df_volume)
-    modelo_t = Prophet(daily_seasonality=True, weekly_seasonality=True).fit(df_tma.rename(columns={'tma': 'y'}))
+    
+    modelo_v = Prophet(daily_seasonality=True, weekly_seasonality=True)
+    modelo_v.fit(df_volume)
+    modelo_t = Prophet(daily_seasonality=True, weekly_seasonality=True)
+    modelo_t.fit(df_tma.rename(columns={'tma': 'y'}))
 
     st.sidebar.subheader("📅 Mês de Projeção")
     data_inicio_proj = st.sidebar.date_input("Data inicial", value=datetime.today().replace(day=1))
@@ -92,12 +97,14 @@ if dados:
 
     resultados = []
     for _, linha in previsao.iterrows():
-        vol_total = linha['volume']
-        tma = linha['tma'] / 60  # em minutos
+        vol_total = max(linha['volume'], 1)  # Garantir valor positivo mínimo
+        tma_minutos = linha['tma'] / 60  # Convertendo segundos para minutos
         curva = curva_horaria(vol_total)
-        curva['trafego_erlang'] = curva['volume'] * tma / 60
-        curva['disponiveis'] = 1.0  # Simula 100% no início
+        # Calcular tráfego em Erlang por hora: volume por hora * TMA (minutos) / 60
+        curva['trafego_erlang'] = curva['volume'] * tma_minutos / 60
+        curva['disponiveis'] = 1.0  # 100% disponibilidade inicial
         curva = aplicar_pausas(curva, pausas_jornada)
+        # Ajuste pela taxa da operação
         curva['PA_necessarios'] = curva['trafego_erlang'] * taxa_operacao
         curva['Data'] = linha['ds'].date()
         resultados.append(curva)
