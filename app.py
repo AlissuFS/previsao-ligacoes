@@ -2,13 +2,13 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from prophet import Prophet
 import altair as alt
 
 st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", initial_sidebar_state="expanded")
 
-# CSS com estilo corrigido (upload sem quadrado e botão personalizado)
+# CSS com ajustes finais aplicados
 st.markdown("""
     <style>
     [data-testid="stSidebar"] {
@@ -22,19 +22,11 @@ st.markdown("""
     [data-testid="stSidebar"] .stMultiSelect > div > div,
     [data-testid="stSidebar"] .stDateInput > div > div {
         background: #4b0081 !important;
-        color: transparent !important;
+        color: white !important;
         border: 1px solid white !important;
         border-radius: 10px !important;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
         padding: 6px;
-    }
-
-    /* Remove o fundo e borda do uploader */
-    [data-testid="stSidebar"] .stFileUploader > div:first-child {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
     }
 
     [data-testid="stFileUploadDropzone"] {
@@ -45,10 +37,9 @@ st.markdown("""
     }
 
     [data-testid="stFileUploadDropzone"] > div {
-        display: none !important; /* Oculta texto padrão interno */
+        display: none !important;
     }
 
-    /* Estilo do botão do uploader */
     [data-testid="stFileUploadDropzone"] button {
         background-color: #9032bb !important;
         color: white !important;
@@ -61,11 +52,6 @@ st.markdown("""
 
     [data-testid="stFileUploadDropzone"] button:hover {
         background-color: #a84be0 !important;
-    }
-
-    [data-testid="stSidebar"] .stMultiSelect .css-12jo7m5 {
-        background-color: #9032bb !important;
-        color: white !important;
     }
 
     .stButton button {
@@ -81,16 +67,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Logo e menu lateral
+# Sidebar
 st.sidebar.image(
     "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
     use_container_width=True
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-# Upload com botão personalizado
 uploaded_file = st.sidebar.file_uploader("📂 Selecionar arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
-
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
 
@@ -192,7 +176,6 @@ if uploaded_file:
     st.success("Previsões geradas com sucesso!")
     st.dataframe(df_prev_formatado, use_container_width=True)
 
-    # Gráficos
     st.markdown("### 📊 Gráficos de Comparação")
 
     df_chart = df_prev.copy()
@@ -210,7 +193,7 @@ if uploaded_file:
         y='percentual_volume:Q',
         tooltip=[
             alt.Tooltip('ds:T', title='Data'),
-            alt.Tooltip('y:Q', title='Volume'),
+            alt.Tooltip('y:Q', title='Volume', format='.0f'),
             alt.Tooltip('percentual_volume_str:N', title='% Volume')
         ]
     )
@@ -243,8 +226,8 @@ if uploaded_file:
         df_prev_formatado.to_excel(writer, index=False, sheet_name='Projecao')
 
     st.download_button(
-        label="📥 Baixar projeção completa",
+        label="📥 Baixar Excel com projeções de Volume e TMA",
         data=buffer.getvalue(),
-        file_name="projecao_completa.xlsx",
+        file_name="projecao_volume_tma.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
