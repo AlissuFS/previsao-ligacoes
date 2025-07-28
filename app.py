@@ -2,232 +2,114 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import io
-from datetime import datetime
+from datetime import datetime, timedelta, time
 from prophet import Prophet
 import altair as alt
 
-st.set_page_config(page_title="SERCOM Digitais - Projeção", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="SERCOM Digitais - Projeção e Dimensionamento", layout="wide")
 
-# CSS com ajustes finais aplicados
-st.markdown("""
-    <style>
-    [data-testid="stSidebar"] {
-        background-color: #4b0081;
-    }
-    [data-testid="stSidebar"] * {
-        color: white !important;
-    }
+st.title("🔮 SERCOM Digitais - Projeção e Dimensionamento de Operação")
 
-    [data-testid="stSidebar"] .stSelectbox > div > div,
-    [data-testid="stSidebar"] .stMultiSelect > div > div,
-    [data-testid="stSidebar"] .stDateInput > div > div {
-        background: #4b0081 !important;
-        color: white !important;
-        border: 1px solid white !important;
-        border-radius: 10px !important;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        padding: 6px;
-    }
+st.sidebar.header("⚙️ Configurações")
 
-    [data-testid="stFileUploadDropzone"] {
-        background-color: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
+# Upload do arquivo
+dados = st.sidebar.file_uploader("📂 Importar planilha com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=["csv", "xlsx"])
 
-    [data-testid="stFileUploadDropzone"] > div {
-        display: none !important;
-    }
+# Horários da operação por dia da semana
+st.sidebar.subheader("🕒 Horário de Funcionamento")
+hr_semana_ini = st.sidebar.time_input("Início Seg a Sex", value=time(8, 0))
+hr_semana_fim = st.sidebar.time_input("Fim Seg a Sex", value=time(20, 0))
+hr_sabado_ini = st.sidebar.time_input("Início Sábado", value=time(9, 0))
+hr_sabado_fim = st.sidebar.time_input("Fim Sábado", value=time(15, 0))
+hr_domingo_ini = st.sidebar.time_input("Início Domingo", value=time(10, 0))
+hr_domingo_fim = st.sidebar.time_input("Fim Domingo", value=time(14, 0))
 
-    [data-testid="stFileUploadDropzone"] button {
-        background-color: #9032bb !important;
-        color: white !important;
-        border-radius: 10px !important;
-        border: none !important;
-        padding: 10px 20px !important;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        font-weight: 600;
-    }
+# Taxa da operação
+total_hcs = st.sidebar.number_input("👥 Total de HCs da célula", min_value=1, value=8)
+pico_hcs_logados = st.sidebar.number_input("📈 Pico de HCs logados simultaneamente", min_value=1, value=4)
+taxa_operacao = total_hcs / pico_hcs_logados if pico_hcs_logados else 0
+st.sidebar.markdown(f"**Taxa da Operação:** {taxa_operacao:.2f}")
 
-    [data-testid="stFileUploadDropzone"] button:hover {
-        background-color: #a84be0 !important;
-    }
+# NS e SLA
+st.sidebar.subheader("🎯 NS e SLA")
+ns_percentual = st.sidebar.slider("Nível de Serviço (%)", 50, 100, 80)
+sla_segundos = st.sidebar.number_input("SLA (segundos)", min_value=10, max_value=300, value=60)
 
-    .stButton button {
-        background-color: #9032bb;
-        color: white;
-        border: none;
-        border-radius: 10px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-    }
-    .stButton button:hover {
-        background-color: #a84be0;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Jornada do operador
+st.sidebar.subheader("⏱️ Jornada do Operador")
+jornada_opcao = st.sidebar.selectbox("Selecione Jornada", ["06:20:00", "08:10:00"])
+pausas_jornada = {
+    "06:20:00": [("09:20", 10), ("11:30", 20), ("14:00", 10)],
+    "08:10:00": [("11:10", 10), ("13:00", 60), ("16:10", 10)]
+}[jornada_opcao]
 
-# Sidebar
-st.sidebar.image(
-    "https://raw.githubusercontent.com/AlissuFS/previsao-ligacoes/main/Logotipo%20Sercom%20Digital%20br%20_png_edited_p.avif",
-    use_container_width=True
-)
-st.sidebar.markdown("### 🔍 Configurações")
+# Função para aplicar pausas a uma curva horária
+def aplicar_pausas(curva, pausas):
+    curva = curva.copy()
+    for hora_str, duracao in pausas:
+        h = int(hora_str.split(":")[0])
+        curva.loc[h, 'disponiveis'] *= max(0, 1 - duracao / 60)  # Reduz disponibilidade
+    return curva
 
-uploaded_file = st.sidebar.file_uploader("📂 Selecionar arquivo com colunas 'Data', 'Quantidade de Ligações' e 'TMA'", type=[".xlsx", ".xls", ".csv"])
-dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
-dias_selecionados = st.sidebar.multiselect("📍 Dias da semana considerados", dias_semana_port, default=dias_semana_port)
+# Distribui volume do dia por hora com curva horária padrão
+def curva_horaria(volume_total):
+    distribuicao = np.array([0.02, 0.04, 0.05, 0.06, 0.08, 0.10, 0.11, 0.12, 0.11, 0.10, 0.08, 0.06, 0.04, 0.03])
+    distribuicao /= distribuicao.sum()
+    horas = list(range(8, 22))  # 14 horas
+    volume_horario = volume_total * distribuicao
+    return pd.DataFrame({"hora": horas, "volume": volume_horario})
 
-def ocorrencia_semana(data):
-    dia_semana = data.weekday()
-    dias_mes = pd.date_range(start=data.replace(day=1), end=data)
-    return sum(d.weekday() == dia_semana for d in dias_mes)
-
-def remover_outliers_detalhado(df, valor_col):
-    df = df.copy()
-    df['ordem'] = df['ds'].apply(ocorrencia_semana)
-    grupos = df.groupby(['dia_semana_pt', 'ordem'])
-    df_filtrado = []
-
-    for (dia, ordem), grupo in grupos:
-        if dia == 'Domingo':
-            media_valor = grupo[valor_col].mean()
-            data_referencia = grupo['ds'].iloc[0]
-            df_filtrado.append(pd.DataFrame({
-                'ds': [data_referencia],
-                valor_col: [media_valor],
-                'dia_semana_pt': [dia],
-                'ordem': [ordem]
-            }))
-            continue
-
-        if len(grupo) < 3:
-            df_filtrado.append(grupo)
-            continue
-
-        Q1 = grupo[valor_col].quantile(0.25)
-        Q3 = grupo[valor_col].quantile(0.75)
-        IQR = Q3 - Q1
-        lim_inf = Q1 - 1.5 * IQR
-        lim_sup = Q3 + 1.5 * IQR
-        grupo_filtrado = grupo[(grupo[valor_col] >= lim_inf) & (grupo[valor_col] <= lim_sup)]
-        df_filtrado.append(grupo_filtrado)
-
-    return pd.concat(df_filtrado).sort_values('ds')
-
-def format_num_brl(x):
-    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-if uploaded_file:
-    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(('xlsx', 'xls')) else pd.read_csv(uploaded_file)
+if dados:
+    ext = dados.name.split(".")[-1]
+    df = pd.read_excel(dados) if ext in ["xls", "xlsx"] else pd.read_csv(dados)
     df.columns = df.columns.str.strip()
-
-    if 'Data' not in df.columns or 'Quantidade de Ligações' not in df.columns or 'TMA' not in df.columns:
+    if not set(['Data', 'Quantidade de Ligações', 'TMA']).issubset(df.columns):
         st.error("A planilha deve conter as colunas: 'Data', 'Quantidade de Ligações' e 'TMA'")
         st.stop()
 
     df['ds'] = pd.to_datetime(df['Data'])
     df['y'] = pd.to_numeric(df['Quantidade de Ligações'], errors='coerce').fillna(0).clip(lower=0)
     df['tma'] = pd.to_numeric(df['TMA'], errors='coerce').fillna(0).clip(lower=0)
-    df['ano_mes'] = df['ds'].dt.to_period('M')
-    df['dia_semana'] = df['ds'].dt.day_name()
-    mapa_dias = {
-        'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
-        'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-    }
-    df['dia_semana_pt'] = df['dia_semana'].map(mapa_dias)
-    df['ordem'] = df['ds'].apply(ocorrencia_semana)
 
-    df_limpo_volume = remover_outliers_detalhado(df, 'y')
-    df_limpo_volume = df_limpo_volume[['ds', 'y']].drop_duplicates(subset=['ds']).reset_index(drop=True)
+    df_volume = df[['ds', 'y']].dropna()
+    df_tma = df[['ds', 'tma']].dropna().groupby('ds').mean().reset_index()
+    modelo_v = Prophet(daily_seasonality=True, weekly_seasonality=True).fit(df_volume)
+    modelo_t = Prophet(daily_seasonality=True, weekly_seasonality=True).fit(df_tma.rename(columns={'tma': 'y'}))
 
-    df_limpo_tma = remover_outliers_detalhado(df, 'tma')
-    df_tma = df_limpo_tma.groupby('ds')['tma'].mean().reset_index().rename(columns={'tma': 'y'})
+    st.sidebar.subheader("📅 Mês de Projeção")
+    data_inicio_proj = st.sidebar.date_input("Data inicial", value=datetime.today().replace(day=1))
+    datas_proj = pd.date_range(start=data_inicio_proj, end=data_inicio_proj + pd.offsets.MonthEnd(0))
+    futuro = pd.DataFrame({"ds": datas_proj})
 
-    modelo_volume = Prophet(daily_seasonality=True, weekly_seasonality=True)
-    modelo_volume.fit(df_limpo_volume)
-    modelo_tma = Prophet(daily_seasonality=True, weekly_seasonality=True)
-    modelo_tma.fit(df_tma)
+    prev_v = modelo_v.predict(futuro)[['ds', 'yhat']].rename(columns={'yhat': 'volume'})
+    prev_t = modelo_t.predict(futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
+    previsao = pd.merge(prev_v, prev_t, on='ds')
 
-    mes_proj = st.sidebar.date_input("🗓 Escolha o primeiro dia do mês para projeção futura", value=datetime.today().replace(day=1))
-    mes_proj = pd.to_datetime(mes_proj)
-    dias_futuros = pd.date_range(start=mes_proj, end=(mes_proj + pd.offsets.MonthEnd(0)))
-    df_futuro = pd.DataFrame({'ds': dias_futuros})
+    st.success("Previsão gerada com sucesso!")
+    st.dataframe(previsao)
 
-    previsao_volume = modelo_volume.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'y'})
-    previsao_volume['y'] = previsao_volume['y'].apply(lambda x: 1 if x <= 0 else x)
+    st.markdown("### 📊 Curva Intrahora e Dimensionamento")
 
-    previsao_tma = modelo_tma.predict(df_futuro)[['ds', 'yhat']].rename(columns={'yhat': 'tma'})
+    resultados = []
+    for _, linha in previsao.iterrows():
+        vol_total = linha['volume']
+        tma = linha['tma'] / 60  # em minutos
+        curva = curva_horaria(vol_total)
+        curva['trafego_erlang'] = curva['volume'] * tma / 60
+        curva['disponiveis'] = 1.0  # Simula 100% no início
+        curva = aplicar_pausas(curva, pausas_jornada)
+        curva['PA_necessarios'] = curva['trafego_erlang'] * taxa_operacao
+        curva['Data'] = linha['ds'].date()
+        resultados.append(curva)
 
-    df_prev = pd.merge(previsao_volume, previsao_tma, on='ds')
-    df_prev['percentual_volume'] = df_prev['y'] / df_prev['y'].sum() * 100
-    media_tma = df_prev['tma'].mean()
-    df_prev['percentual_tma'] = df_prev['tma'] / media_tma * 100
+    df_dimens = pd.concat(resultados)
 
-    df_prev['percentual_volume_str'] = df_prev['percentual_volume'].apply(lambda x: format_num_brl(x) + '%')
-    df_prev['percentual_tma_str'] = df_prev['percentual_tma'].apply(lambda x: format_num_brl(x) + '%')
+    st.dataframe(df_dimens)
 
-    df_prev_formatado = df_prev[['ds', 'y', 'percentual_volume', 'tma', 'percentual_tma']].copy()
-    df_prev_formatado.columns = ['Data', 'Volume projetado', '% curva volume', 'TMA projetado (s)', '% curva TMA']
-    df_prev_formatado['Data'] = pd.to_datetime(df_prev_formatado['Data']).dt.strftime('%d/%m/%Y')
-    df_prev_formatado['% curva volume'] = df_prev_formatado['% curva volume'].apply(lambda x: format_num_brl(x) + '%')
-    df_prev_formatado['% curva TMA'] = df_prev_formatado['% curva TMA'].apply(lambda x: format_num_brl(x) + '%')
+    chart = alt.Chart(df_dimens).mark_line().encode(
+        x=alt.X('hora:O', title='Hora do dia'),
+        y=alt.Y('PA_necessarios:Q', title='PAs Necessários'),
+        color=alt.Color('Data:N')
+    ).properties(title="Dimensionamento intradiário", width=800)
 
-    st.success("Previsões geradas com sucesso!")
-    st.dataframe(df_prev_formatado, use_container_width=True)
-
-    st.markdown("### 📊 Gráficos de Comparação")
-
-    df_chart = df_prev.copy()
-    df_chart['percentual_volume'] = df_chart['percentual_volume'].round(2)
-    df_chart['percentual_tma'] = df_chart['percentual_tma'].round(2)
-    df_chart['percentual_volume_str'] = df_chart['percentual_volume'].apply(lambda x: format_num_brl(x) + '%')
-    df_chart['percentual_tma_str'] = df_chart['percentual_tma'].apply(lambda x: format_num_brl(x) + '%')
-
-    linha_volume = alt.Chart(df_chart).mark_line(color='#4b0081').encode(
-        x=alt.X('ds:T', title='Data'),
-        y=alt.Y('percentual_volume:Q', title='% Volume')
-    )
-    pontos_volume = alt.Chart(df_chart).mark_point(color='#9032bb', filled=True).encode(
-        x='ds:T',
-        y='percentual_volume:Q',
-        tooltip=[
-            alt.Tooltip('ds:T', title='Data'),
-            alt.Tooltip('y:Q', title='Volume', format='.0f'),
-            alt.Tooltip('percentual_volume_str:N', title='% Volume')
-        ]
-    )
-    chart_volume = (linha_volume + pontos_volume).properties(
-        title='Curva de Volume Projetado', width=800, height=300
-    )
-
-    linha_tma = alt.Chart(df_chart).mark_line(color='#4b0081').encode(
-        x=alt.X('ds:T', title='Data'),
-        y=alt.Y('percentual_tma:Q', title='% TMA')
-    )
-    pontos_tma = alt.Chart(df_chart).mark_point(color='#9032bb', filled=True).encode(
-        x='ds:T',
-        y='percentual_tma:Q',
-        tooltip=[
-            alt.Tooltip('ds:T', title='Data'),
-            alt.Tooltip('tma:Q', title='TMA (s)', format='.0f'),
-            alt.Tooltip('percentual_tma_str:N', title='% TMA')
-        ]
-    )
-    chart_tma = (linha_tma + pontos_tma).properties(
-        title='Curva de TMA Projetado', width=800, height=300
-    )
-
-    st.altair_chart(chart_volume, use_container_width=True)
-    st.altair_chart(chart_tma, use_container_width=True)
-
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df_prev_formatado.to_excel(writer, index=False, sheet_name='Projecao')
-
-    st.download_button(
-        label="📥 Baixar Excel com projeções de Volume e TMA",
-        data=buffer.getvalue(),
-        file_name="projecao_volume_tma.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.altair_chart(chart, use_container_width=True)
