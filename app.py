@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+import io
 from datetime import datetime, timedelta
 from prophet import Prophet
 import altair as alt
@@ -75,21 +76,23 @@ st.sidebar.image(
 )
 st.sidebar.markdown("### 🔍 Configurações")
 
-# Dias da semana em português para checkbox e mapeamento
+# Upload bases
+uploaded_file_diario = st.sidebar.file_uploader("📂 Base Diária - 'Data', 'Quantidade de Ligações', 'TMA'", type=[".xlsx", ".xls", ".csv"])
+uploaded_file_intrahora = st.sidebar.file_uploader("📂 Base Intrahora - 'Intervalo', 'Dia', 'Volume', 'TMA'", type=[".xlsx", ".xls", ".csv"])
+
 dias_semana_port = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
 
-# Checkbox para ativar/desativar funcionamento dos dias da semana
+# Checkbox para ativar/desativar dias da semana
 dias_funcionamento = {}
 for dia in dias_semana_port:
     dias_funcionamento[dia] = st.sidebar.checkbox(f"{dia}", value=True)
 
-# Função para contar ocorrência do dia da semana no mês até a data
+# Funções auxiliares
 def ocorrencia_semana(data):
     dia_semana = data.weekday()
     dias_mes = pd.date_range(start=data.replace(day=1), end=data)
     return sum(d.weekday() == dia_semana for d in dias_mes)
 
-# Função para remover outliers por dia da semana e ocorrência
 def remover_outliers_detalhado(df, valor_col):
     df = df.copy()
     df['ordem'] = df['ds'].apply(ocorrencia_semana)
@@ -97,7 +100,6 @@ def remover_outliers_detalhado(df, valor_col):
     df_filtrado = []
 
     for (dia, ordem), grupo in grupos:
-        # Para domingos, substituir todos pelo valor médio (exemplo tratamento especial)
         if dia == 'Domingo':
             media_valor = grupo[valor_col].mean()
             data_referencia = grupo['ds'].iloc[0]
@@ -123,13 +125,7 @@ def remover_outliers_detalhado(df, valor_col):
 
     return pd.concat(df_filtrado).sort_values('ds')
 
-# Função para formatar números em BRL (com vírgula decimal)
-def format_num_brl(x):
-    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-# Prepara dataframe diário para o modelo
 def preparar_df_diario(df):
-    df = df.copy()
     df['ds'] = pd.to_datetime(df['Data'])
     df['y'] = pd.to_numeric(df['Quantidade de Ligações'], errors='coerce').fillna(0).clip(lower=0)
     df['tma'] = pd.to_numeric(df['TMA'], errors='coerce').fillna(0).clip(lower=0)
@@ -143,9 +139,7 @@ def preparar_df_diario(df):
     df['ordem'] = df['ds'].apply(ocorrencia_semana)
     return df
 
-# Prepara dataframe intrahora para o modelo
 def preparar_df_intrahora(df):
-    df = df.copy()
     df['ds'] = pd.to_datetime(df['Intervalo'])
     df['dia_semana'] = pd.to_datetime(df['Dia']).dt.day_name()
     mapa_dias = {
@@ -158,16 +152,22 @@ def preparar_df_intrahora(df):
     df['tma'] = pd.to_numeric(df['TMA'], errors='coerce').fillna(0).clip(lower=0)
     return df
 
-# Upload dos arquivos
-uploaded_file_diario = st.sidebar.file_uploader("📂 Base Diária - 'Data', 'Quantidade de Ligações', 'TMA'", type=[".xlsx", ".xls", ".csv"])
-uploaded_file_intrahora = st.sidebar.file_uploader("📂 Base Intrahora - 'Intervalo', 'Dia', 'Volume', 'TMA'", type=[".xlsx", ".xls", ".csv"])
+def gerar_datas_futuras_intrahora(mes):
+    inicio = mes
+    fim = mes + pd.offsets.MonthEnd(0)
+    rng = pd.date_range(start=inicio, end=fim + timedelta(days=1), freq='30min')[:-1]
+    return rng
+
+def format_num_brl(x):
+    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def fmt_perc(x):
+    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + '%'
 
 if uploaded_file_diario and uploaded_file_intrahora:
-    # Leitura base diária
-    if uploaded_file_diario.name.endswith(('xlsx', 'xls')):
-        df_diario = pd.read_excel(uploaded_file_diario)
-    else:
-        df_diario = pd.read_csv(uploaded_file_diario)
+
+    # === Preparar dados diários ===
+    df_diario = pd.read_excel(uploaded_file_diario) if uploaded_file_diario.name.endswith(('xlsx', 'xls')) else pd.read_csv(uploaded_file_diario)
     df_diario.columns = df_diario.columns.str.strip()
     required_cols_diario = {'Data', 'Quantidade de Ligações', 'TMA'}
     if not required_cols_diario.issubset(df_diario.columns):
@@ -178,11 +178,8 @@ if uploaded_file_diario and uploaded_file_intrahora:
     df_limpo_tma_diario = remover_outliers_detalhado(df_diario, 'tma')
     df_tma_diario = df_limpo_tma_diario.groupby('ds')['tma'].mean().reset_index().rename(columns={'tma':'y'})
 
-    # Leitura base intrahora
-    if uploaded_file_intrahora.name.endswith(('xlsx', 'xls')):
-        df_intrahora = pd.read_excel(uploaded_file_intrahora)
-    else:
-        df_intrahora = pd.read_csv(uploaded_file_intrahora)
+    # === Preparar dados intrahora ===
+    df_intrahora = pd.read_excel(uploaded_file_intrahora) if uploaded_file_intrahora.name.endswith(('xlsx', 'xls')) else pd.read_csv(uploaded_file_intrahora)
     df_intrahora.columns = df_intrahora.columns.str.strip()
     required_cols_intrahora = {'Intervalo', 'Dia', 'Volume', 'TMA'}
     if not required_cols_intrahora.issubset(df_intrahora.columns):
@@ -193,197 +190,181 @@ if uploaded_file_diario and uploaded_file_intrahora:
     df_limpo_tma_intrahora = remover_outliers_detalhado(df_intrahora, 'tma')
     df_tma_intrahora = df_limpo_tma_intrahora.groupby('ds')['tma'].mean().reset_index().rename(columns={'tma':'y'})
 
-    # Modelos Prophet para volume e TMA diário e intrahora
+    # === Modelos Prophet ===
     modelo_vol_diario = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_vol_diario.fit(df_limpo_vol_diario)
-
     modelo_tma_diario = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_tma_diario.fit(df_tma_diario)
 
     modelo_vol_intrahora = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_vol_intrahora.fit(df_limpo_vol_intrahora)
-
     modelo_tma_intrahora = Prophet(daily_seasonality=True, weekly_seasonality=True)
     modelo_tma_intrahora.fit(df_tma_intrahora)
 
-    # Seleção do mês para projeção futura
+    # === Seleção mês para projeção ===
     mes_proj = st.sidebar.date_input("🗓 Escolha o primeiro dia do mês para projeção futura", value=datetime.today().replace(day=1))
     mes_proj = pd.to_datetime(mes_proj)
 
-    def gerar_datas_futuras_intrahora(mes):
-        inicio = mes
-        fim = mes + pd.offsets.MonthEnd(0)
-        rng = pd.date_range(start=inicio, end=fim + timedelta(days=1), freq='30min')[:-1]
-        return rng
-
-    # Datas futuras para projeção diária e intrahora
+    # === Datas futuras para diária e intrahora ===
     dias_futuros_diario = pd.date_range(start=mes_proj, end=(mes_proj + pd.offsets.MonthEnd(0)))
     df_futuro_diario = pd.DataFrame({'ds': dias_futuros_diario})
 
     datas_futuras_intrahora = gerar_datas_futuras_intrahora(mes_proj)
     df_futuro_intrahora = pd.DataFrame({'ds': datas_futuras_intrahora})
 
-    # Previsões com Prophet
+    # === Previsões diárias ===
     previsao_vol_diario = modelo_vol_diario.predict(df_futuro_diario)[['ds','yhat']].rename(columns={'yhat':'y'})
     previsao_vol_diario['y'] = previsao_vol_diario['y'].apply(lambda x: max(1, x))
-
     previsao_tma_diario = modelo_tma_diario.predict(df_futuro_diario)[['ds','yhat']].rename(columns={'yhat':'tma'})
 
-    previsao_vol_intrahora = modelo_vol_intrahora.predict(df_futuro_intrahora)[['ds','yhat']].rename(columns={'yhat':'y'})
-    previsao_vol_intrahora['y'] = previsao_vol_intrahora['y'].apply(lambda x: max(0.1, x))
-
-    previsao_tma_intrahora = modelo_tma_intrahora.predict(df_futuro_intrahora)[['ds','yhat']].rename(columns={'yhat':'tma'})
-
-    # Mapeamento dos dias da semana para português nas previsões
+    # === Mapear dias da semana em português nas previsões diárias ===
     mapa_dias = {
         'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
         'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
     }
 
-    previsao_vol_intrahora['dia_semana_pt'] = previsao_vol_intrahora['ds'].dt.day_name().map(mapa_dias)
-    previsao_tma_intrahora['dia_semana_pt'] = previsao_tma_intrahora['ds'].dt.day_name().map(mapa_dias)
     previsao_vol_diario['dia_semana_pt'] = previsao_vol_diario['ds'].dt.day_name().map(mapa_dias)
     previsao_tma_diario['dia_semana_pt'] = previsao_tma_diario['ds'].dt.day_name().map(mapa_dias)
 
-    # Zerar volume e TMA dos dias desativados
+    # === Ajustar dias desativados para diária ===
     dias_desativados = [dia for dia, ativo in dias_funcionamento.items() if not ativo]
 
-    previsao_vol_intrahora.loc[previsao_vol_intrahora['dia_semana_pt'].isin(dias_desativados), 'y'] = 0
-    previsao_tma_intrahora.loc[previsao_tma_intrahora['dia_semana_pt'].isin(dias_desativados), 'tma'] = 0
     previsao_vol_diario.loc[previsao_vol_diario['dia_semana_pt'].isin(dias_desativados), 'y'] = 0
     previsao_tma_diario.loc[previsao_tma_diario['dia_semana_pt'].isin(dias_desativados), 'tma'] = 0
 
-    # Recalcular percentuais após zerar dias desativados
-
-    # Intrahora: percentual volume por dia, percentual tma proporcional à média diária
-    previsao_vol_intrahora['data'] = previsao_vol_intrahora['ds'].dt.date
-    previsao_tma_intrahora['data'] = previsao_tma_intrahora['ds'].dt.date
-
-    # Percentual volume intrahora dentro do dia
-    def calc_percentual_volume(grp):
-        s = grp.sum()
-        if s > 0:
-            return grp / s * 100
-        else:
-            return 0
-
-    previsao_vol_intrahora['percentual_volume'] = previsao_vol_intrahora.groupby('data')['y'].transform(calc_percentual_volume)
-
-    # Percentual TMA intrahora proporcional à média diária de TMA intrahora daquele dia
-    def calc_percentual_tma_intrahora(grp):
-        media = grp.mean()
-        if media > 0:
-            return grp / media * 100
-        else:
-            return 0
-
-    previsao_tma_intrahora['percentual_tma'] = previsao_tma_intrahora.groupby('data')['tma'].transform(calc_percentual_tma_intrahora)
-
-    # Curva diária: percentual volume relativo ao total do mês projetado
+    # === Calcular percentuais diários ===
     if previsao_vol_diario['y'].sum() > 0:
         previsao_vol_diario['percentual_volume'] = previsao_vol_diario['y'] / previsao_vol_diario['y'].sum() * 100
     else:
         previsao_vol_diario['percentual_volume'] = 0
 
-    # Curva diária TMA: percentual TMA relativo à média do mês projetado
     media_tma_diario = previsao_tma_diario['tma'].mean() if previsao_tma_diario['tma'].mean() > 0 else 1
     previsao_tma_diario['percentual_tma'] = previsao_tma_diario['tma'] / media_tma_diario * 100
 
-    # Formatação percentual para tooltip
-    def fmt_perc(x):
-        return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + '%'
-
-    previsao_vol_intrahora['percentual_volume_str'] = previsao_vol_intrahora['percentual_volume'].apply(fmt_perc)
-    previsao_tma_intrahora['percentual_tma_str'] = previsao_tma_intrahora['percentual_tma'].apply(fmt_perc)
     previsao_vol_diario['percentual_volume_str'] = previsao_vol_diario['percentual_volume'].apply(fmt_perc)
     previsao_tma_diario['percentual_tma_str'] = previsao_tma_diario['percentual_tma'].apply(fmt_perc)
 
-    # --- Exibir tabelas ---
-    st.markdown("## Curva Diária - Projeção")
-    df_formatado_diario = pd.DataFrame({
-        'Data': previsao_vol_diario['ds'].dt.strftime('%d/%m/%Y'),
-        'Dia Semana': previsao_vol_diario['dia_semana_pt'],
-        'Volume': previsao_vol_diario['y'].round(0).astype(int),
-        'Percentual Volume': previsao_vol_diario['percentual_volume_str'],
-        'TMA (s)': previsao_tma_diario['tma'].round(2),
-        'Percentual TMA': previsao_tma_diario['percentual_tma_str']
-    })
-    st.dataframe(df_formatado_diario.style.format({"Volume": "{:,.0f}", "TMA (s)": "{:,.2f}"}), height=300)
+    # === Cálculo do perfil intrahora histórico (percentual dentro do dia) ===
+    df_intrahora = df_intrahora.copy()
+    df_intrahora['data'] = df_intrahora['ds'].dt.date
 
-    st.markdown("## Curva Intrahora - Projeção")
-    df_formatado_intrahora = pd.DataFrame({
-        'Intervalo': previsao_vol_intrahora['ds'].dt.strftime('%d/%m/%Y %H:%M'),
-        'Dia Semana': previsao_vol_intrahora['dia_semana_pt'],
-        'Volume': previsao_vol_intrahora['y'].round(2),
-        'Percentual Volume': previsao_vol_intrahora['percentual_volume_str'],
-        'TMA (s)': previsao_tma_intrahora['tma'].round(2),
-        'Percentual TMA': previsao_tma_intrahora['percentual_tma_str']
-    })
-    st.dataframe(df_formatado_intrahora.style.format({"Volume": "{:,.2f}", "TMA (s)": "{:,.2f}"}), height=300)
+    vol_diario_historico = df_intrahora.groupby('data')['y'].sum().rename('volume_diario')
+    df_intrahora = df_intrahora.merge(vol_diario_historico, left_on='data', right_index=True)
+    df_intrahora['percentual_intrahora'] = df_intrahora['y'] / df_intrahora['volume_diario']
 
-    # --- Gráficos ---
-    st.markdown("## Gráficos de Volume e TMA")
+    tma_diario_historico = df_intrahora.groupby('data')['tma'].mean().rename('tma_diario')
+    df_intrahora = df_intrahora.merge(tma_diario_historico, left_on='data', right_index=True)
+    df_intrahora['percentual_intrahora_tma'] = df_intrahora['tma'] / df_intrahora['tma_diario']
 
-    # Gráfico volume diário
-    graf_vol_diario = alt.Chart(previsao_vol_diario).mark_line(point=True).encode(
+    df_intrahora['hora'] = df_intrahora['ds'].dt.time
+
+    perfil_intrahora = df_intrahora.groupby(['dia_semana_pt', 'hora'])[['percentual_intrahora', 'percentual_intrahora_tma']].mean().reset_index()
+
+    # === Preparar df futuro intrahora com datas e horas ===
+    df_futuro_intrahora['data'] = df_futuro_intrahora['ds'].dt.date
+    df_futuro_intrahora['hora'] = df_futuro_intrahora['ds'].dt.time
+    df_futuro_intrahora['dia_semana_pt'] = df_futuro_intrahora['ds'].dt.day_name().map(mapa_dias)
+
+    # Merge perfil intrahora histórico (percentuais) com df futuro intrahora
+    df_futuro_intrahora = df_futuro_intrahora.merge(perfil_intrahora, on=['dia_semana_pt', 'hora'], how='left')
+    df_futuro_intrahora['percentual_intrahora'] = df_futuro_intrahora['percentual_intrahora'].fillna(0)
+    df_futuro_intrahora['percentual_intrahora_tma'] = df_futuro_intrahora['percentual_intrahora_tma'].fillna(0)
+
+    # Merge previsão diária volume e TMA para cada dia na curva intrahora
+    previsao_vol_diario['data'] = previsao_vol_diario['ds'].dt.date
+    previsao_tma_diario['data'] = previsao_tma_diario['ds'].dt.date
+
+    df_futuro_intrahora = df_futuro_intrahora.merge(previsao_vol_diario[['data', 'y']], on='data', how='left')
+    df_futuro_intrahora = df_futuro_intrahora.merge(previsao_tma_diario[['data', 'tma']], on='data', how='left')
+
+    # === Calcular projeção intrahora ponderada pelo perfil histórico ===
+    df_futuro_intrahora['volume_projetado'] = df_futuro_intrahora['percentual_intrahora'] * df_futuro_intrahora['y']
+    df_futuro_intrahora['tma_projetado'] = df_futuro_intrahora['percentual_intrahora_tma'] * df_futuro_intrahora['tma']
+
+    # Zerar volume e TMA em dias desativados
+    df_futuro_intrahora.loc[df_futuro_intrahora['dia_semana_pt'].isin(dias_desativados), ['volume_projetado', 'tma_projetado']] = 0
+
+    # Calcular percentuais intrahora para exibição (dentro de cada dia)
+    def calc_perc_intrahora(df):
+        return df.groupby('data')['volume_projetado'].transform(lambda x: x / x.sum() * 100 if x.sum() > 0 else 0)
+
+    df_futuro_intrahora['percentual_volume_intrahora'] = calc_perc_intrahora(df_futuro_intrahora)
+    df_futuro_intrahora['percentual_volume_intrahora_str'] = df_futuro_intrahora['percentual_volume_intrahora'].apply(fmt_perc)
+
+    # === Visualização ===
+
+    st.title("📞 Projeção de Volume e TMA de Ligações")
+
+    st.subheader("📅 Previsão diária - Volume")
+    st.dataframe(previsao_vol_diario[['ds', 'y', 'percentual_volume_str']].rename(columns={'ds': 'Data', 'y': 'Volume'}))
+
+    st.subheader("📅 Previsão diária - TMA")
+    st.dataframe(previsao_tma_diario[['ds', 'tma', 'percentual_tma_str']].rename(columns={'ds': 'Data', 'tma': 'TMA'}))
+
+    # Gráfico Volume Diário
+    grafico_vol_diario = alt.Chart(previsao_vol_diario).mark_line(point=True).encode(
         x=alt.X('ds:T', title='Data'),
-        y=alt.Y('percentual_volume:Q', title='Percentual Volume (%)'),
+        y=alt.Y('y:Q', title='Volume'),
         tooltip=[
-            alt.Tooltip('ds:T', title='Data', format='%d/%m/%Y'),
+            alt.Tooltip('ds:T', title='Data'),
+            alt.Tooltip('y:Q', title='Volume'),
+            alt.Tooltip('percentual_volume:Q', title='Percentual (%)', format=".2f"),
             alt.Tooltip('dia_semana_pt:N', title='Dia da Semana'),
-            alt.Tooltip('y:Q', title='Volume', format=',.0f'),
-            alt.Tooltip('percentual_volume_str:N', title='% Volume')
         ],
         color=alt.value('#9032bb')
     ).properties(width=800, height=300)
+    st.altair_chart(grafico_vol_diario)
 
-    # Gráfico TMA diário
-    graf_tma_diario = alt.Chart(previsao_tma_diario).mark_line(point=True).encode(
+    # Gráfico TMA Diário
+    grafico_tma_diario = alt.Chart(previsao_tma_diario).mark_line(point=True).encode(
         x=alt.X('ds:T', title='Data'),
-        y=alt.Y('percentual_tma:Q', title='Percentual TMA (%)'),
+        y=alt.Y('tma:Q', title='TMA'),
         tooltip=[
-            alt.Tooltip('ds:T', title='Data', format='%d/%m/%Y'),
+            alt.Tooltip('ds:T', title='Data'),
+            alt.Tooltip('tma:Q', title='TMA'),
+            alt.Tooltip('percentual_tma:Q', title='Percentual (%)', format=".2f"),
             alt.Tooltip('dia_semana_pt:N', title='Dia da Semana'),
-            alt.Tooltip('tma:Q', title='TMA (s)', format=',.2f'),
-            alt.Tooltip('percentual_tma_str:N', title='% TMA')
         ],
         color=alt.value('#4b0081')
     ).properties(width=800, height=300)
+    st.altair_chart(grafico_tma_diario)
 
-    st.altair_chart(graf_vol_diario, use_container_width=True)
-    st.altair_chart(graf_tma_diario, use_container_width=True)
+    # Visualizar tabela e gráfico Intrahora Volume
+    st.subheader("⏱️ Previsão intrahora - Volume")
+    tabela_intrahora_vol = df_futuro_intrahora[['ds', 'volume_projetado', 'percentual_volume_intrahora_str', 'dia_semana_pt']].copy()
+    tabela_intrahora_vol.columns = ['DataHora', 'Volume Projetado', '% Intrahora', 'Dia da Semana']
+    st.dataframe(tabela_intrahora_vol)
 
-    # Gráfico volume intrahora - exemplo de um dia selecionado
-    dias_unicos = sorted(previsao_vol_intrahora['data'].unique())
-    dia_selecionado = st.selectbox("Selecione um dia para visualizar curva intrahora", dias_unicos)
-    df_intrahora_dia = previsao_vol_intrahora[previsao_vol_intrahora['data'] == dia_selecionado]
-    df_tma_intrahora_dia = previsao_tma_intrahora[previsao_tma_intrahora['data'] == dia_selecionado]
-
-    graf_vol_intrahora = alt.Chart(df_intrahora_dia).mark_line(point=True).encode(
-        x=alt.X('ds:T', title='Hora'),
-        y=alt.Y('percentual_volume:Q', title='Percentual Volume (%)'),
+    grafico_intrahora_vol = alt.Chart(df_futuro_intrahora).mark_area(opacity=0.6, line=True).encode(
+        x='ds:T',
+        y=alt.Y('volume_projetado:Q', stack=None, title='Volume'),
+        color=alt.Color('dia_semana_pt:N', legend=alt.Legend(title='Dia da Semana')),
         tooltip=[
-            alt.Tooltip('ds:T', title='Intervalo', format='%H:%M'),
-            alt.Tooltip('y:Q', title='Volume', format=',.2f'),
-            alt.Tooltip('percentual_volume_str:N', title='% Volume')
-        ],
-        color=alt.value('#9032bb')
+            alt.Tooltip('ds:T', title='DataHora'),
+            alt.Tooltip('volume_projetado:Q', title='Volume Projetado'),
+            alt.Tooltip('percentual_volume_intrahora:Q', title='% Intrahora', format=".2f"),
+            alt.Tooltip('dia_semana_pt:N', title='Dia da Semana'),
+        ]
     ).properties(width=800, height=300)
+    st.altair_chart(grafico_intrahora_vol)
 
-    graf_tma_intrahora = alt.Chart(df_tma_intrahora_dia).mark_line(point=True).encode(
-        x=alt.X('ds:T', title='Hora'),
-        y=alt.Y('percentual_tma:Q', title='Percentual TMA (%)'),
+    # Visualizar tabela e gráfico Intrahora TMA
+    st.subheader("⏱️ Previsão intrahora - TMA")
+    tabela_intrahora_tma = df_futuro_intrahora[['ds', 'tma_projetado', 'dia_semana_pt']].copy()
+    tabela_intrahora_tma.columns = ['DataHora', 'TMA Projetado', 'Dia da Semana']
+    st.dataframe(tabela_intrahora_tma)
+
+    grafico_intrahora_tma = alt.Chart(df_futuro_intrahora).mark_line(point=True, strokeDash=[5,5]).encode(
+        x='ds:T',
+        y=alt.Y('tma_projetado:Q', title='TMA Projetado'),
+        color=alt.Color('dia_semana_pt:N', legend=alt.Legend(title='Dia da Semana')),
         tooltip=[
-            alt.Tooltip('ds:T', title='Intervalo', format='%H:%M'),
-            alt.Tooltip('tma:Q', title='TMA (s)', format=',.2f'),
-            alt.Tooltip('percentual_tma_str:N', title='% TMA')
-        ],
-        color=alt.value('#4b0081')
+            alt.Tooltip('ds:T', title='DataHora'),
+            alt.Tooltip('tma_projetado:Q', title='TMA Projetado'),
+            alt.Tooltip('dia_semana_pt:N', title='Dia da Semana'),
+        ]
     ).properties(width=800, height=300)
-
-    st.altair_chart(graf_vol_intrahora, use_container_width=True)
-    st.altair_chart(graf_tma_intrahora, use_container_width=True)
+    st.altair_chart(grafico_intrahora_tma)
 
 else:
-    st.info("Faça o upload dos arquivos de base diária e intrahora para iniciar as projeções.")
-
+    st.warning("Por favor, faça upload dos arquivos base diária e base intrahora para iniciar a projeção.")
